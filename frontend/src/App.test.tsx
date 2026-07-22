@@ -27,8 +27,8 @@ describe("App", () => {
   it("marks both date fields with the constrained mobile control", () => {
     render(<App />);
 
-    expect(screen.getByLabelText("開始日期")).toHaveClass("date-input");
-    expect(screen.getByLabelText("結束日期")).toHaveClass("date-input");
+    expect(screen.getByLabelText("開始日期")).toHaveClass("date-input", "date-input--centered");
+    expect(screen.getByLabelText("結束日期")).toHaveClass("date-input", "date-input--centered");
   });
 
   it("keeps every phone header action in one accessible menu", () => {
