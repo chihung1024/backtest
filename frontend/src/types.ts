@@ -143,11 +143,13 @@ export interface RegimeAnalysis {
 
 export interface PortfolioResult {
   name: string;
+  display_name: string;
   metrics: Record<string, number | string | null>;
   series: PerformancePoint[];
   annual_returns: Record<string, number>;
   monthly_returns: Array<{ year: number; month: number; return: number }>;
   income_by_year: Record<string, number>;
+  target_allocation: Record<string, number>;
   final_allocation: Record<string, number>;
   factor_analysis: FactorAnalysis | null;
   style_analysis: StyleAnalysis | null;
