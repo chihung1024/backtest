@@ -4,6 +4,8 @@
 
 線上網站：[https://chihung1024.github.io/backtest/](https://chihung1024.github.io/backtest/)
 
+正式 API：[https://portfolio-backtest-api-454423251671.asia-east1.run.app](https://portfolio-backtest-api-454423251671.asia-east1.run.app)
+
 > 本專案僅供個人研究與教育，不構成投資建議。Yahoo Finance 資料的使用仍受 Yahoo 與 yfinance 的使用條款限制。
 
 ## 功能
@@ -78,7 +80,7 @@ npm run build
 
 ## 部署
 
-合併到 `main` 後，GitHub Pages workflow 會發布前端；Cloud Run workflow 在 Google Cloud OIDC 與 repository variables 設定完成後部署 API。完整的一次性帳號、IAM、Secret Manager、FRED key 與成本保護設定請依照[免費資源部署指南](docs/DEPLOYMENT.md)。
+合併到 `main` 後，GitHub Pages workflow 會發布前端，Cloud Run workflow 會透過短效 OIDC 身分自動部署 API；不保存 Google Cloud 服務帳號私鑰。正式資源識別碼可公開並已寫入 workflow，API 與 FRED 金鑰只存在 Google Secret Manager。完整設定、金鑰輪替與成本保護請參閱[免費資源部署指南](docs/DEPLOYMENT.md)。
 
 ## 文件
 
