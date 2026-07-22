@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+
+# Local configuration
+.env
+.env.local
+!.env.example
+gha-creds-*.json
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Runtime caches
+.cache/
+*.sqlite3
