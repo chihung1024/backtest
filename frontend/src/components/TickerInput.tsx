@@ -8,12 +8,14 @@ export function TickerInput({
   connection,
   placeholder,
   searchLabel,
+  clearLabel,
   onChange,
 }: {
   value: string;
   connection: ApiConnection;
   placeholder: string;
   searchLabel: string;
+  clearLabel: string;
   onChange: (value: string) => void;
 }) {
   const [results, setResults] = useState<AssetSearchResult[]>([]);
@@ -69,7 +71,7 @@ export function TickerInput({
         spellCheck={false}
       />
       {value && (
-        <button type="button" className="ticker-input__clear" onClick={() => update("")} aria-label="Clear">
+        <button type="button" className="ticker-input__clear" onClick={() => update("")} aria-label={clearLabel}>
           <X size={14} />
         </button>
       )}

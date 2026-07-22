@@ -24,6 +24,13 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /執行回測/ })).toBeInTheDocument();
   });
 
+  it("marks both date fields with the constrained mobile control", () => {
+    render(<App />);
+
+    expect(screen.getByLabelText("開始日期")).toHaveClass("date-input");
+    expect(screen.getByLabelText("結束日期")).toHaveClass("date-input");
+  });
+
   it("keeps every phone header action in one accessible menu", () => {
     render(<App />);
 
@@ -98,6 +105,22 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "清空此資產列 1" }));
     expect(firstTicker).toHaveValue("");
     expect(firstWeight).toHaveValue(null);
+  });
+
+  it("shows the exact portfolio total and clears a removed column before it can return", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("tab", { name: /投資組合資產/ }));
+
+    const fifthName = screen.getByLabelText("投資組合名稱 5");
+    const fifthWeight = screen.getByLabelText("資產 1 權重 5");
+    fireEvent.change(fifthName, { target: { value: "暫存名稱" } });
+    fireEvent.change(fifthWeight, { target: { value: "99.6" } });
+    expect(screen.getByLabelText("合計 99.6%")).toHaveTextContent("99.6%");
+
+    fireEvent.click(screen.getByRole("button", { name: /移除最後一組/ }));
+    fireEvent.click(screen.getByRole("button", { name: /新增比較組合/ }));
+    expect(screen.getByLabelText("投資組合名稱 5")).toHaveValue("");
+    expect(screen.getByLabelText("資產 1 權重 5")).toHaveValue(null);
   });
 
   it("keeps an explicit zero valid in the field but resets edits after a regular reload", () => {
