@@ -585,12 +585,21 @@ select {
   inline-size: 100%;
   min-inline-size: 0;
   max-inline-size: 100%;
-  text-align: left;
 }
 
-.date-input::-webkit-date-and-time-value {
+.date-input--centered {
+  text-align: center;
+}
+
+.date-input--centered::-webkit-date-and-time-value,
+.date-input--centered::-webkit-datetime-edit {
+  display: block;
+  width: 100%;
   min-width: 0;
-  text-align: left;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  text-align: center;
 }
 
 input:hover,
