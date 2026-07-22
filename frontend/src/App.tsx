@@ -138,7 +138,7 @@ export default function App() {
           <div className="hero__facts" aria-label="Capabilities">
             <div><strong>3</strong><span>Portfolios</span></div>
             <div><strong>20</strong><span>Assets each</span></div>
-            <div><strong>USD · TWD</strong><span>Multi-currency</span></div>
+            <div><strong>TWD · Daily</strong><span>Global valuation</span></div>
           </div>
         </section>
 

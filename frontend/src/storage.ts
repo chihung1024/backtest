@@ -1,7 +1,8 @@
 import { defaultFormState } from "./defaults";
 import type { ApiConnection, BacktestFormState, Locale, Theme } from "./types";
 
-const MODEL_KEY = "portfolio-lab:model:v1";
+const MODEL_KEY = "portfolio-lab:model:v2";
+const LEGACY_MODEL_KEY = "portfolio-lab:model:v1";
 const CONNECTION_KEY = "portfolio-lab:connection:v1";
 const THEME_KEY = "portfolio-lab:theme";
 const LOCALE_KEY = "portfolio-lab:locale";
@@ -11,7 +12,15 @@ export function loadModel(): BacktestFormState {
   if (fromShare) return mergeModel(fromShare);
   try {
     const saved = localStorage.getItem(MODEL_KEY);
-    return saved ? mergeModel(JSON.parse(saved) as Partial<BacktestFormState>) : structuredClone(defaultFormState);
+    if (saved) return mergeModel(JSON.parse(saved) as Partial<BacktestFormState>);
+    const legacy = localStorage.getItem(LEGACY_MODEL_KEY);
+    return legacy
+      ? mergeModel({
+          ...(JSON.parse(legacy) as Partial<BacktestFormState>),
+          baseCurrency: "TWD",
+          outputFrequency: "daily",
+        })
+      : structuredClone(defaultFormState);
   } catch {
     return structuredClone(defaultFormState);
   }
@@ -86,6 +95,7 @@ function mergeModel(saved: Partial<BacktestFormState>): BacktestFormState {
   return {
     ...defaults,
     ...saved,
+    baseCurrency: "TWD",
     assets: saved.assets?.length ? saved.assets : defaults.assets,
     portfolioNames: Array.from(
       { length: 3 },

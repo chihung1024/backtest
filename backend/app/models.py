@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
@@ -137,9 +137,7 @@ class BacktestRequest(BaseModel):
     start_date: date
     end_date: date
     initial_amount: float = Field(default=10_000.0, gt=0, le=1_000_000_000_000)
-    base_currency: Annotated[
-        str, StringConstraints(strip_whitespace=True, to_upper=True, pattern=r"^[A-Z]{3}$")
-    ] = "USD"
+    base_currency: Literal["TWD"] = "TWD"
     include_ytd: bool = True
     reinvest_dividends: bool = True
     display_income: bool = True
@@ -148,7 +146,7 @@ class BacktestRequest(BaseModel):
     rebalancing: RebalanceConfig = Field(default_factory=RebalanceConfig)
     leverage: LeverageConfig = Field(default_factory=LeverageConfig)
     analytics: AnalyticsConfig = Field(default_factory=AnalyticsConfig)
-    output_frequency: OutputFrequency = OutputFrequency.MONTHLY
+    output_frequency: OutputFrequency = OutputFrequency.DAILY
 
     @model_validator(mode="after")
     def validate_dates(self) -> BacktestRequest:
@@ -207,7 +205,7 @@ class BacktestResponse(BaseModel):
     data_as_of: date
     effective_start: date
     effective_end: date
-    base_currency: str
+    base_currency: Literal["TWD"]
     results: list[PortfolioResult]
     benchmark: PortfolioResult | None = None
     assets: list[AssetMetadata]

@@ -17,6 +17,7 @@ describe("portfolio request builder", () => {
     ]);
     expect(request.portfolios[1].assets[0]).toEqual({ symbol: "VT", weight: 25 });
     expect(request.base_currency).toBe("TWD");
+    expect(request.output_frequency).toBe("daily");
   });
 
   it("reports incomplete weights", () => {

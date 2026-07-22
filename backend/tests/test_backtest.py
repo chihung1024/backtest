@@ -41,6 +41,31 @@ def test_daily_returns_compound() -> None:
     assert simulation.return_index.iloc[-1] == pytest.approx(expected / 1_000)
 
 
+def test_default_result_preserves_each_daily_drawdown_point() -> None:
+    request = BacktestRequest.model_validate(
+        {
+            "portfolios": [
+                {"name": "Daily", "assets": [{"symbol": "AAA", "weight": 100}]}
+            ],
+            "start_date": "2020-01-01",
+            "end_date": "2020-12-31",
+            "initial_amount": 1_000,
+            "rebalancing": {"frequency": "none"},
+        }
+    )
+    aligned = align_histories(
+        {"AAA": history("AAA", [0.0, 0.10, -0.20, 0.25])}, ["AAA"]
+    )
+
+    result = to_portfolio_result(
+        simulate_portfolio(request.portfolios[0], aligned, request), request
+    )
+
+    assert len(result.series) == 4
+    assert result.series[2].drawdown == pytest.approx(-0.20)
+    assert result.metrics["max_drawdown"] == pytest.approx(-0.20)
+
+
 def test_cashflows_change_balance_not_time_weighted_return() -> None:
     request = BacktestRequest.model_validate(
         {

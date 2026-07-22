@@ -8,6 +8,7 @@ import pytest
 from conftest import history
 
 from app.data.yfinance_provider import (
+    _FX_LOOKBACK_DAYS,
     _REPAIR_LOOKAHEAD_DAYS,
     _REPAIR_LOOKBACK_DAYS,
     YFinanceProvider,
@@ -75,6 +76,64 @@ def test_fx_levels_do_not_repeat_returns_across_calendar_gaps(
     )["VT"]
 
     assert converted.total_returns.tolist() == pytest.approx([0.0, 0.0, 0.02])
+
+
+def test_fx_only_quote_day_is_valued_on_that_day(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = YFinanceProvider()
+    asset = history("VT", [0.0, 0.0, 0.10], currency="USD")
+    fx = pd.Series([1.0, 1.02, 1.02], index=asset.total_returns.index)
+    asset.total_returns = asset.total_returns.iloc[[0, 2]]
+    asset.price_returns = asset.price_returns.iloc[[0, 2]]
+    asset.dividend_returns = asset.dividend_returns.iloc[[0, 2]]
+    asset.dividends = asset.dividends.iloc[[0, 2]]
+    monkeypatch.setattr(provider, "_download_fx_levels", lambda *args: fx)
+
+    converted = provider._convert_currencies(
+        {"VT": asset}, "TWD", date(2020, 1, 1), date(2020, 1, 31)
+    )["VT"]
+
+    assert converted.total_returns.index.equals(fx.index)
+    assert converted.total_returns.tolist() == pytest.approx([0.0, 0.02, 0.10])
+    assert (1.0 + converted.total_returns).prod() - 1.0 == pytest.approx(0.122)
+
+
+def test_quote_currency_uses_yahoo_metadata_and_is_cached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class FakeFastInfo:
+        currency = "GBp"
+
+    class FakeTicker:
+        fast_info = FakeFastInfo()
+
+        def __init__(self, symbol: str) -> None:
+            calls.append(symbol)
+
+    monkeypatch.setattr("app.data.yfinance_provider.yf.Ticker", FakeTicker)
+    provider = YFinanceProvider()
+
+    assert provider._resolve_currency("VOD.L") == "GBP"
+    assert provider._resolve_currency("VOD.L") == "GBP"
+    assert calls == ["VOD.L"]
+
+
+def test_unverified_quote_currency_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeFastInfo:
+        currency = None
+
+    class FakeTicker:
+        fast_info = FakeFastInfo()
+
+    monkeypatch.setattr("app.data.yfinance_provider.yf.Ticker", FakeTicker)
+
+    with pytest.raises(RuntimeError, match="Unable to verify Yahoo quote currency"):
+        YFinanceProvider()._resolve_currency("UNKNOWN")
 
 
 def test_adjusted_split_does_not_create_artificial_return() -> None:
@@ -181,6 +240,11 @@ def test_download_includes_context_for_yfinance_repairs(
 
     monkeypatch.setattr("app.data.yfinance_provider.yf.download", fake_download)
     provider = YFinanceProvider()
+    monkeypatch.setattr(
+        provider,
+        "_resolve_currencies",
+        lambda symbols: dict.fromkeys(symbols, "USD"),
+    )
     start = frame.index[0].date()
     end = frame.index[-1].date()
 
@@ -192,6 +256,25 @@ def test_download_includes_context_for_yfinance_repairs(
     assert captured["actions"] is True
     assert captured["repair"] is True
     assert captured["keepna"] is True
+
+
+def test_fx_download_includes_prior_quotes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    index = pd.bdate_range("2020-01-01", periods=2)
+
+    def fake_download(*args: object, **kwargs: object) -> pd.DataFrame:
+        captured.update(kwargs)
+        return pd.DataFrame({"Close": [30.0, 30.1]}, index=index)
+
+    monkeypatch.setattr("app.data.yfinance_provider.yf.download", fake_download)
+    start = date(2020, 1, 1)
+
+    result = YFinanceProvider()._download_fx_levels("USD", "TWD", start, date(2020, 1, 31))
+
+    assert len(result) == 2
+    assert captured["start"] == (start - timedelta(days=_FX_LOOKBACK_DAYS)).isoformat()
 
 
 def _frame(
