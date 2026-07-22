@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import axe from "axe-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -24,11 +25,75 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /執行回測/ })).toBeInTheDocument();
   });
 
+  it("has no automatically detectable accessibility violations in the main workflow", async () => {
+    const { container } = render(<App />);
+    const audit = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(audit.violations).toEqual([]);
+  });
+
+  it("has no automatically detectable accessibility violations in assets and connection flows", async () => {
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("tab", { name: /投資組合資產/ }));
+    let audit = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(audit.violations).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "資料連線" }));
+    audit = await axe.run(container, {
+      rules: { "color-contrast": { enabled: false } },
+    });
+    expect(audit.violations).toEqual([]);
+  });
+
   it("marks both date fields with the constrained mobile control", () => {
     render(<App />);
 
     expect(screen.getByLabelText("開始日期")).toHaveClass("date-input", "date-input--centered");
     expect(screen.getByLabelText("結束日期")).toHaveClass("date-input", "date-input--centered");
+  });
+
+  it("links configuration tabs to their panel and supports arrow-key navigation", () => {
+    render(<App />);
+
+    const settingsTab = screen.getByRole("tab", { name: /回測設定/ });
+    const assetsTab = screen.getByRole("tab", { name: /投資組合資產/ });
+    const panel = screen.getByRole("tabpanel");
+    expect(settingsTab).toHaveAttribute("aria-controls", "configuration-panel");
+    expect(settingsTab).toHaveAttribute("tabindex", "0");
+    expect(assetsTab).toHaveAttribute("tabindex", "-1");
+    expect(panel).toHaveAttribute("aria-labelledby", "configuration-settings-tab");
+
+    settingsTab.focus();
+    fireEvent.keyDown(settingsTab, { key: "ArrowRight" });
+    expect(assetsTab).toHaveFocus();
+    expect(assetsTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "configuration-assets-tab");
+  });
+
+  it("traps focus in the connection dialog, closes on Escape, and restores focus", () => {
+    render(<App />);
+
+    const connectionButton = screen.getByRole("button", { name: "資料連線" });
+    connectionButton.focus();
+    fireEvent.click(connectionButton);
+
+    const dialog = screen.getByRole("dialog", { name: "資料連線" });
+    const apiUrl = screen.getByLabelText("API 網址");
+    const close = within(dialog).getByRole("button", { name: "關閉" });
+    const save = within(dialog).getByRole("button", { name: "儲存" });
+    expect(apiUrl).toHaveFocus();
+    expect(dialog).toHaveAttribute("aria-describedby", "connection-description");
+
+    save.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(close).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(connectionButton).toHaveFocus();
   });
 
   it("keeps every phone header action in one accessible menu", () => {
@@ -48,6 +113,19 @@ describe("App", () => {
     fireEvent.click(within(menu).getByRole("menuitem", { name: "深色模式" }));
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(screen.queryByRole("menu", { name: "更多操作" })).not.toBeInTheDocument();
+  });
+
+  it("returns focus to the phone menu trigger when Escape closes the menu", () => {
+    render(<App />);
+
+    const trigger = screen.getByRole("button", { name: "更多操作" });
+    fireEvent.click(trigger);
+    const share = within(screen.getByRole("menu")).getByRole("menuitem", { name: "複製分享網址" });
+    share.focus();
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
   it("shows five blank portfolios and six blank asset rows on desktop", () => {

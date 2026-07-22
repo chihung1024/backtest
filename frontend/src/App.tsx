@@ -22,6 +22,8 @@ import { buildRequest, validateModel } from "./utils";
 
 type ConfigurationTab = "settings" | "assets";
 
+const configurationTabs: ConfigurationTab[] = ["settings", "assets"];
+
 const ResultsDashboard = lazy(() =>
   import("./components/ResultsDashboard").then((module) => ({
     default: module.ResultsDashboard,
@@ -77,7 +79,10 @@ export default function App() {
     try {
       const next = await runBacktest(connection, buildRequest(model));
       setResponse(next);
-      window.setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+      window.setTimeout(() => resultRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+        block: "start",
+      }), 50);
       setConnected(true);
     } catch (error) {
       setErrors([error instanceof Error ? error.message : String(error)]);
@@ -105,6 +110,24 @@ export default function App() {
     const clean = { ...next, baseUrl: next.baseUrl.trim().replace(/\/$/, "") };
     setConnection(clean);
     saveConnection(clean);
+  }
+
+  function moveConfigurationTab(
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    currentTab: ConfigurationTab,
+  ) {
+    const currentIndex = configurationTabs.indexOf(currentTab);
+    let nextIndex: number;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % configurationTabs.length;
+    else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + configurationTabs.length) % configurationTabs.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = configurationTabs.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextTab = configurationTabs[nextIndex];
+    setTab(nextTab);
+    document.getElementById(`configuration-${nextTab}-tab`)?.focus();
   }
 
   return (
@@ -150,28 +173,41 @@ export default function App() {
             <span className="research-badge"><Check size={14} />{t("personalResearch")}</span>
           </div>
 
-          <div className="configuration-tabs" role="tablist">
+          <div className="configuration-tabs" role="tablist" aria-label="Portfolio Model Configuration">
             <button
+              id="configuration-settings-tab"
               type="button"
               role="tab"
+              aria-controls="configuration-panel"
               aria-selected={tab === "settings"}
+              tabIndex={tab === "settings" ? 0 : -1}
               className={tab === "settings" ? "active" : ""}
               onClick={() => setTab("settings")}
+              onKeyDown={(event) => moveConfigurationTab(event, "settings")}
             >
-              <span>01</span>{t("settings")}
+              <span className="tab-step">01</span><span className="tab-label">{t("settings")}</span>
             </button>
             <button
+              id="configuration-assets-tab"
               type="button"
               role="tab"
+              aria-controls="configuration-panel"
               aria-selected={tab === "assets"}
+              tabIndex={tab === "assets" ? 0 : -1}
               className={tab === "assets" ? "active" : ""}
               onClick={() => setTab("assets")}
+              onKeyDown={(event) => moveConfigurationTab(event, "assets")}
             >
-              <span>02</span>{t("assets")}
+              <span className="tab-step">02</span><span className="tab-label">{t("assets")}</span>
             </button>
           </div>
 
-          <div className="configuration-body" role="tabpanel">
+          <div
+            id="configuration-panel"
+            className="configuration-body"
+            role="tabpanel"
+            aria-labelledby={`configuration-${tab}-tab`}
+          >
             {tab === "settings" ? (
               <SettingsTab model={model} setModel={setModel} t={t} />
             ) : (
@@ -203,7 +239,7 @@ export default function App() {
         <div ref={resultRef} className="result-anchor">
           {response ? (
             <Suspense fallback={<section className="empty-results"><LoaderCircle className="spin" size={30} /></section>}>
-              <ResultsDashboard response={response} t={t} locale={locale} />
+              <ResultsDashboard key={response.request_id} response={response} t={t} locale={locale} />
             </Suspense>
           ) : (
             <section className="empty-results">

@@ -1,6 +1,6 @@
 import type { BacktestFormState, BacktestRequest, PortfolioResult } from "./types";
 
-export const chartColors = ["#19a88a", "#4169e1", "#f59e0b", "#9b5de5", "#e45756", "#5c946e"];
+export const chartColors = ["#08836c", "#4169e1", "#b86b00", "#825ac9", "#c74747", "#4f7f5d"];
 
 export function buildRequest(model: BacktestFormState): BacktestRequest {
   const portfolios = Array.from({ length: model.portfolioCount }, (_, portfolioIndex) => {
