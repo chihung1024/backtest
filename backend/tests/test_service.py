@@ -1,0 +1,71 @@
+from __future__ import annotations
+
+from datetime import date
+
+from conftest import history
+
+from app.config import Settings
+from app.data.base import AssetHistory
+from app.service import BacktestService
+
+
+class StubProvider:
+    def histories(
+        self, symbols: list[str], start: date, end: date, base_currency: str
+    ) -> dict[str, AssetHistory]:
+        return {symbol: history(symbol, [0.0, 0.01, -0.005, 0.002]) for symbol in symbols}
+
+    def search(self, query: str, limit: int = 8) -> list[dict[str, str | None]]:
+        return [{"symbol": "2330.TW", "name": "TSMC", "currency": "TWD"}]
+
+
+class RecordingProvider(StubProvider):
+    end_received: date | None = None
+
+    def histories(
+        self, symbols: list[str], start: date, end: date, base_currency: str
+    ) -> dict[str, AssetHistory]:
+        self.end_received = end
+        return super().histories(symbols, start, end, base_currency)
+
+
+def test_service_normalizes_taiwan_ticker() -> None:
+    from app.models import BacktestRequest
+
+    request = BacktestRequest.model_validate(
+        {
+            "portfolios": [
+                {"name": "Taiwan", "assets": [{"symbol": "2330", "weight": 100}]}
+            ],
+            "start_date": "2020-01-01",
+            "end_date": "2020-12-31",
+            "base_currency": "TWD",
+        }
+    )
+    service = BacktestService(Settings(), provider=StubProvider())
+    response = service.run(request)
+    assert response.assets[0].symbol == "2330.TW"
+    assert any("Normalized 2330" in warning for warning in response.warnings)
+    assert response.results[0].metrics["final_balance"] is not None
+
+
+def test_service_excludes_incomplete_current_year_when_ytd_is_disabled() -> None:
+    from app.models import BacktestRequest
+
+    today = date.today()
+    request = BacktestRequest.model_validate(
+        {
+            "portfolios": [
+                {"name": "Calendar years", "assets": [{"symbol": "VT", "weight": 100}]}
+            ],
+            "start_date": "2020-01-01",
+            "end_date": today,
+            "include_ytd": False,
+        }
+    )
+    provider = RecordingProvider()
+
+    response = BacktestService(Settings(), provider=provider).run(request)
+
+    assert provider.end_received == date(today.year - 1, 12, 31)
+    assert any("Excluded the incomplete" in warning for warning in response.warnings)
