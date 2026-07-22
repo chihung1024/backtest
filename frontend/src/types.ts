@@ -21,7 +21,7 @@ export interface BacktestFormState {
   endDate: string;
   includeYtd: boolean;
   initialAmount: number;
-  baseCurrency: string;
+  baseCurrency: "TWD";
   cashflowType: CashflowType;
   cashflowAmount: number;
   cashflowFrequency: CashflowFrequency;
@@ -67,7 +67,7 @@ export interface BacktestRequest {
   start_date: string;
   end_date: string;
   initial_amount: number;
-  base_currency: string;
+  base_currency: "TWD";
   include_ytd: boolean;
   reinvest_dividends: boolean;
   display_income: boolean;
@@ -159,7 +159,7 @@ export interface BacktestResponse {
   data_as_of: string;
   effective_start: string;
   effective_end: string;
-  base_currency: string;
+  base_currency: "TWD";
   results: PortfolioResult[];
   benchmark: PortfolioResult | null;
   assets: Array<{

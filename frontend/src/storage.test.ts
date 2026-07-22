@@ -25,6 +25,19 @@ describe("browser persistence", () => {
     expect(loadModel().portfolioNames[0]).toBe("台灣核心策略");
   });
 
+  it("migrates legacy models to daily TWD valuation", () => {
+    const legacy = freshDefaultState();
+    localStorage.setItem(
+      "portfolio-lab:model:v1",
+      JSON.stringify({ ...legacy, baseCurrency: "USD", outputFrequency: "monthly" }),
+    );
+
+    const restored = loadModel();
+
+    expect(restored.baseCurrency).toBe("TWD");
+    expect(restored.outputFrequency).toBe("daily");
+  });
+
   it("stores the API key locally but never in a shared model URL", () => {
     saveConnection({ baseUrl: "https://api.example.test/", accessKey: "very-secret" });
     expect(loadConnection()).toEqual({

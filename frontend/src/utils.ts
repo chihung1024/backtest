@@ -18,7 +18,7 @@ export function buildRequest(model: BacktestFormState): BacktestRequest {
     start_date: model.startDate,
     end_date: model.endDate,
     initial_amount: Number(model.initialAmount),
-    base_currency: model.baseCurrency,
+    base_currency: "TWD",
     include_ytd: model.includeYtd,
     reinvest_dividends: model.reinvestDividends,
     display_income: model.displayIncome,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import Any
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 _EXCHANGE_CURRENCIES = {
+    ".AT": "EUR",
     ".TW": "TWD",
     ".TWO": "TWD",
     ".L": "GBP",
@@ -31,10 +33,52 @@ _EXCHANGE_CURRENCIES = {
     ".PA": "EUR",
     ".DE": "EUR",
     ".AS": "EUR",
+    ".BA": "ARS",
+    ".BK": "THB",
+    ".BO": "INR",
+    ".BR": "EUR",
+    ".CA": "EGP",
+    ".CO": "DKK",
+    ".HE": "EUR",
+    ".IC": "ISK",
+    ".IR": "EUR",
+    ".IS": "TRY",
+    ".JK": "IDR",
+    ".JO": "ZAR",
+    ".KL": "MYR",
+    ".LS": "EUR",
+    ".MC": "EUR",
+    ".MI": "EUR",
+    ".MX": "MXN",
+    ".NS": "INR",
+    ".NZ": "NZD",
+    ".OL": "NOK",
+    ".PR": "CZK",
+    ".QA": "QAR",
+    ".RG": "EUR",
+    ".RO": "RON",
+    ".SA": "BRL",
+    ".SI": "SGD",
+    ".SN": "CLP",
+    ".SR": "SAR",
+    ".ST": "SEK",
+    ".SW": "CHF",
+    ".TA": "ILS",
+    ".VI": "EUR",
+    ".VS": "EUR",
+    ".WA": "PLN",
+}
+
+_CURRENCY_ALIASES = {
+    "GBP": "GBP",
+    "GBX": "GBP",
+    "ZAC": "ZAR",
+    "ILA": "ILS",
 }
 
 _REPAIR_LOOKBACK_DAYS = 400
 _REPAIR_LOOKAHEAD_DAYS = 8
+_FX_LOOKBACK_DAYS = 10
 _SPLIT_UNDERLYING_TOLERANCE = np.log(1.25)
 _SPLIT_MINIMUM_IMPROVEMENT = np.log(1.10)
 
@@ -54,6 +98,14 @@ def infer_currency(symbol: str) -> str:
     return "USD"
 
 
+def _normalize_currency(value: object) -> str:
+    currency = str(value or "").strip().upper()
+    currency = _CURRENCY_ALIASES.get(currency, currency)
+    if len(currency) != 3 or not currency.isalpha():
+        raise ValueError(f"Yahoo returned invalid quote currency: {value!r}")
+    return currency
+
+
 class YFinanceProvider:
     """Yahoo Finance adapter with short-lived in-process caching.
 
@@ -65,6 +117,7 @@ class YFinanceProvider:
         self._cache: TTLCache[tuple[Any, ...], dict[str, AssetHistory]] = TTLCache(
             maxsize=max_items, ttl=ttl_seconds
         )
+        self._currency_cache: dict[str, str] = {}
         self._lock = threading.RLock()
 
     def histories(
@@ -168,6 +221,7 @@ class YFinanceProvider:
         if raw.empty:
             raise ValueError("Yahoo Finance returned no observations for the requested assets")
 
+        currencies = self._resolve_currencies(symbols)
         histories: dict[str, AssetHistory] = {}
         for symbol in symbols:
             frame = _ticker_frame(raw, symbol, len(symbols))
@@ -178,7 +232,7 @@ class YFinanceProvider:
                 frame,
                 start,
                 end,
-                currency=infer_currency(symbol),
+                currency=currencies[symbol],
             )
             if history is not None:
                 histories[symbol] = history
@@ -187,6 +241,34 @@ class YFinanceProvider:
         if missing:
             raise ValueError(f"No usable Yahoo Finance history for: {', '.join(missing)}")
         return histories
+
+    def _resolve_currencies(self, symbols: list[str]) -> dict[str, str]:
+        """Resolve Yahoo's actual quote currency instead of assuming exchange currency."""
+        if not symbols:
+            return {}
+        workers = min(len(symbols), 4)
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            currencies = list(executor.map(self._resolve_currency, symbols))
+        return dict(zip(symbols, currencies, strict=True))
+
+    def _resolve_currency(self, symbol: str) -> str:
+        with self._lock:
+            cached = self._currency_cache.get(symbol)
+        if cached is not None:
+            return cached
+
+        errors: list[str] = []
+        for _ in range(2):
+            try:
+                value = yf.Ticker(symbol).fast_info.currency
+                currency = _normalize_currency(value)
+                with self._lock:
+                    self._currency_cache[symbol] = currency
+                return currency
+            except Exception as exc:
+                errors.append(str(exc))
+        detail = errors[-1] if errors else "currency metadata was empty"
+        raise RuntimeError(f"Unable to verify Yahoo quote currency for {symbol}: {detail}")
 
     def _convert_currencies(
         self,
@@ -208,19 +290,29 @@ class YFinanceProvider:
                 fx_cache[key] = self._download_fx_levels(
                     history.currency, base_currency, start, end
                 )
+            native_index = history.total_returns.index
+            fx_window = fx_cache[key].loc[native_index[0] : native_index[-1]]
+            valuation_index = native_index.union(fx_window.index).sort_values().unique()
+            # Retain the downloaded lookback while forward-filling so a local-market holiday
+            # at the beginning of the window never borrows a future FX quote.
             fx_levels = (
                 fx_cache[key]
-                .reindex(history.total_returns.index)
+                .reindex(fx_cache[key].index.union(valuation_index))
+                .sort_index()
                 .ffill()
+                .reindex(valuation_index)
                 .bfill()
             )
             if fx_levels.isna().any():
                 raise ValueError(f"Unable to align {key} FX history with {symbol}")
             fx_returns = fx_levels.pct_change(fill_method=None).fillna(0.0)
-            total = (1.0 + history.total_returns) * (1.0 + fx_returns) - 1.0
+            fx_returns.iloc[0] = 0.0
+            native_total = history.total_returns.reindex(valuation_index).fillna(0.0)
+            native_dividend = history.dividend_returns.reindex(valuation_index).fillna(0.0)
+            total = (1.0 + native_total) * (1.0 + fx_returns) - 1.0
             # A distribution is cash, not a multiplicative return factor. Convert its value at
             # the current FX level, then preserve the exact additive identity total=price+cash.
-            dividend = history.dividend_returns * (1.0 + fx_returns)
+            dividend = native_dividend * (1.0 + fx_returns)
             price = total - dividend
             result[symbol] = AssetHistory(
                 symbol=history.symbol,
@@ -229,7 +321,7 @@ class YFinanceProvider:
                 total_returns=total,
                 price_returns=price,
                 dividend_returns=dividend,
-                dividends=history.dividends,
+                dividends=history.dividends.reindex(valuation_index).fillna(0.0),
                 dividend_events=history.dividend_events,
                 capital_gain_events=history.capital_gain_events,
                 split_events=history.split_events,
@@ -246,7 +338,7 @@ class YFinanceProvider:
             try:
                 raw = yf.download(
                     ticker,
-                    start=start.isoformat(),
+                    start=(start - timedelta(days=_FX_LOOKBACK_DAYS)).isoformat(),
                     end=(end + timedelta(days=1)).isoformat(),
                     auto_adjust=True,
                     progress=False,

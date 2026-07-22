@@ -54,7 +54,7 @@ def base_request() -> BacktestRequest:
             "start_date": date(2020, 1, 1),
             "end_date": date(2020, 12, 31),
             "initial_amount": 10_000,
-            "base_currency": "USD",
+            "base_currency": "TWD",
             "rebalancing": {"frequency": "annual"},
         }
     )

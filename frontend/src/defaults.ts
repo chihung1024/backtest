@@ -31,7 +31,7 @@ export const defaultFormState: BacktestFormState = {
   regime: "none",
   riskFreeRate: 0,
   inflationAdjusted: false,
-  outputFrequency: "monthly",
+  outputFrequency: "daily",
   assets: [
     { id: crypto.randomUUID(), symbol: "VT", weights: [80, 0, 0] },
     { id: crypto.randomUUID(), symbol: "BND", weights: [20, 0, 0] },

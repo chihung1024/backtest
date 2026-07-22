@@ -85,6 +85,8 @@ export function ResultsDashboard({
             {t("period")}：{response.effective_start} → {response.effective_end}
             <span className="dot-separator">•</span>
             {t("dataAsOf")}：{response.data_as_of}
+            <span className="dot-separator">•</span>
+            {t("valuationBasis")}：{response.base_currency}
           </p>
         </div>
         <div className="results-actions">
@@ -279,7 +281,7 @@ function DrawdownChart({ data, results }: ChartProps) {
           />
           <Legend />
           {results.map((result, index) => (
-            <Area key={result.name} type="monotone" dataKey={`s${index}_drawdown`} name={result.name} stroke={chartColors[index]} fill={chartColors[index]} fillOpacity={0.08} dot={false} connectNulls />
+            <Area key={result.name} type="linear" dataKey={`s${index}_drawdown`} name={result.name} stroke={chartColors[index]} fill={chartColors[index]} fillOpacity={0.08} dot={false} connectNulls />
           ))}
         </AreaChart>
       </ResponsiveContainer>

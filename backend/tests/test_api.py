@@ -89,7 +89,7 @@ async def test_backtest_endpoint_returns_calculated_response() -> None:
         "benchmark": "VT",
         "start_date": "2020-01-01",
         "end_date": "2020-12-31",
-        "base_currency": "USD",
+        "base_currency": "TWD",
     }
 
     async with AsyncClient(
@@ -104,9 +104,11 @@ async def test_backtest_endpoint_returns_calculated_response() -> None:
 
     assert response.status_code == 200
     body = response.json()
+    assert body["base_currency"] == "TWD"
     assert body["results"][0]["name"] == "Global"
     assert body["benchmark"]["name"] == "Benchmark · VT"
     assert body["assets"][0]["symbol"] == "VT"
     assert body["assets"][0]["split_events"] == 0
     assert body["assets"][0]["capital_gain_events"] == 0
     assert body["results"][0]["metrics"]["final_balance"] > 0
+    assert len(body["results"][0]["series"]) == 4

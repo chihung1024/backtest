@@ -45,15 +45,8 @@ export function SettingsTab({
             />
           </Field>
           <Field label={t("baseCurrency")}>
-            <select
-              value={model.baseCurrency}
-              onChange={(event) => patch({ baseCurrency: event.target.value })}
-            >
+            <select value={model.baseCurrency} disabled aria-label={t("baseCurrency")}>
               <option value="TWD">TWD · 新台幣</option>
-              <option value="USD">USD · US Dollar</option>
-              <option value="JPY">JPY · 日本円</option>
-              <option value="EUR">EUR · Euro</option>
-              <option value="HKD">HKD · 港幣</option>
             </select>
           </Field>
           <Field label={t("outputFrequency")}>
@@ -61,9 +54,9 @@ export function SettingsTab({
               value={model.outputFrequency}
               onChange={(event) => patch({ outputFrequency: event.target.value as BacktestFormState["outputFrequency"] })}
             >
-              <option value="monthly">{t("monthly")}</option>
-              <option value="weekly">{t("weekly")}</option>
               <option value="daily">{t("daily")}</option>
+              <option value="weekly">{t("weekly")}</option>
+              <option value="monthly">{t("monthly")}</option>
             </select>
           </Field>
           <div className="field field--toggle">
