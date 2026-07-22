@@ -83,3 +83,4 @@ npm run build
 - [回測計算方法與限制](docs/METHODOLOGY.md)
 - [API 使用說明](docs/API.md)
 - [GitHub Pages＋Cloud Run 部署](docs/DEPLOYMENT.md)
+- [版本封存與還原](docs/RELEASES.md)

@@ -209,6 +209,9 @@ curl -H "X-Backtest-Key: YOUR_KEY" \
 
 確認 `VITE_API_BASE_URL` 已設定後重新建置 Pages；也可直接在網站的「資料連線」覆寫 URL。API key 必須由使用者在瀏覽器輸入。
 
+首次 Pages workflow 會透過 `actions/configure-pages` 自動啟用 GitHub Pages，
+不需要先在 repository settings 手動選擇發布來源。
+
 ### Yahoo Finance 暫時失敗
 
 稍後重試，確認代碼與日期有效。這個服務刻意不以付費資料源自動兜底，以免產生未預期成本。
