@@ -45,27 +45,35 @@ jobs:
         run: |
           set -euo pipefail
 
-          billing_info="$RUNNER_TEMP/billing-info.json"
+          billing_accounts_file="$RUNNER_TEMP/billing-accounts.json"
           budgets="$RUNNER_TEMP/budgets.json"
           request="$RUNNER_TEMP/budget-update-request.json"
           response="$RUNNER_TEMP/budget-update-response.json"
 
           status="$(curl --silent --show-error \
-            --output "$billing_info" \
+            --output "$billing_accounts_file" \
             --write-out '%{http_code}' \
             --header "Authorization: Bearer $ACCESS_TOKEN" \
-            "https://cloudbilling.googleapis.com/v1/projects/$GCP_PROJECT_ID/billingInfo")"
+            "https://cloudbilling.googleapis.com/v1/billingAccounts?pageSize=100")"
           if [[ "$status" != "200" ]]; then
-            echo "Unable to read the project's billing configuration (HTTP $status)." >&2
+            echo "Unable to list accessible billing accounts (HTTP $status)." >&2
+            echo "Verify Billing Account Costs Manager is granted to the deploy service account." >&2
             exit 1
           fi
 
-          billing_account="$(jq -r '.billingAccountName // empty' "$billing_info")"
-          billing_enabled="$(jq -r '.billingEnabled // false' "$billing_info")"
-          if [[ "$billing_enabled" != "true" || "$billing_account" != *"$BILLING_ACCOUNT_SUFFIX" ]]; then
-            echo "Billing is disabled or the linked account does not match the approved suffix." >&2
+          mapfile -t billing_accounts < <(jq -r \
+            --arg suffix "$BILLING_ACCOUNT_SUFFIX" '
+              .billingAccounts[]?
+              | select(.open == true)
+              | select(.name | endswith($suffix))
+              | .name
+            ' "$billing_accounts_file")
+
+          if [[ "${#billing_accounts[@]}" -ne 1 ]]; then
+            echo "Expected exactly one accessible open billing account with the approved suffix; found ${#billing_accounts[@]}." >&2
             exit 1
           fi
+          billing_account="${billing_accounts[0]}"
 
           status="$(curl --silent --show-error \
             --output "$budgets" \

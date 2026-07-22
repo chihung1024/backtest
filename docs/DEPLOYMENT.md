@@ -215,8 +215,9 @@ curl -H "X-Backtest-Key: YOUR_KEY" \
 
 - Cloud Run 已限制最多兩個執行個體、每個 512 MiB，閒置時縮到零。
 - Billing 已建立每月 TWD 150 預算與 5%、20%、50% 實際支出通知；預算不會自動停機。
-- `.github/workflows/billing-budget.yml` 只會修改連結至本專案、帳戶尾碼符合
-  `3BA9` 的唯一每月 TWD 150 預算；首次合併 workflow 或手動執行時會套用並讀回驗證
+- `.github/workflows/billing-budget.yml` 會從部署帳號可存取的開放 Billing accounts 中，
+  只選取尾碼符合 `3BA9` 的唯一帳戶，再修改其中唯一符合本專案（或帳戶共用）、
+  每月 TWD 150 的預算；首次合併 workflow 或手動執行時會套用並讀回驗證
   5%、20%、50% 三個門檻。
 - 定期查看 Cloud Run request count、錯誤率與 p95 latency。
 - 若發現異常流量，先移除 `allUsers` 的 `roles/run.invoker`，再輪替 `backtest-api-key`。
