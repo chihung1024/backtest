@@ -11,20 +11,20 @@
   --ink: #102a3e;
   --ink-strong: #071a2f;
   --muted: #526b79;
-  --subtle: #647a87;
+  --subtle: #607582;
   --line: #d8e3e6;
   --line-strong: #bed0d5;
-  --primary: #0b8f78;
+  --primary: #087d67;
   --primary-dark: #08715f;
   --primary-soft: #dff5ef;
   --navy: #0a2540;
   --navy-2: #123858;
   --gold: #ffcc66;
-  --danger: #c94747;
+  --danger: #c03e3e;
   --danger-soft: #fff0ef;
   --warning: #9a6413;
   --warning-soft: #fff7df;
-  --success: #087d67;
+  --success: #08715f;
   --shadow-sm: 0 1px 2px rgba(10, 37, 64, 0.05), 0 5px 16px rgba(10, 37, 64, 0.04);
   --shadow-lg: 0 24px 60px rgba(10, 37, 64, 0.13), 0 3px 14px rgba(10, 37, 64, 0.08);
   --radius-sm: 8px;
@@ -63,12 +63,26 @@
   box-sizing: border-box;
 }
 
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+}
+
 html {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
   overflow-x: clip;
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
   background: var(--page);
 }
 
@@ -106,6 +120,12 @@ button:disabled {
   opacity: 0.52;
 }
 
+select:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  background: var(--surface-3);
+}
+
 a {
   color: var(--primary);
 }
@@ -116,7 +136,7 @@ a {
 }
 
 :focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--primary) 36%, transparent);
+  outline: 3px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -465,7 +485,7 @@ main {
   background: var(--primary);
 }
 
-.configuration-tabs button span {
+.configuration-tabs .tab-step {
   display: grid;
   width: 22px;
   height: 22px;
@@ -476,9 +496,15 @@ main {
   font-size: 12px;
 }
 
-.configuration-tabs button.active span {
+.configuration-tabs button.active .tab-step {
   color: var(--primary-dark);
   background: var(--primary-soft);
+}
+
+.configuration-tabs .tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .configuration-body {
@@ -556,6 +582,7 @@ main {
 }
 
 .field__label {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -585,20 +612,38 @@ select {
   inline-size: 100%;
   min-inline-size: 0;
   max-inline-size: 100%;
+  padding-block: 0;
 }
 
 .date-input--centered {
   text-align: center;
 }
 
-.date-input--centered::-webkit-date-and-time-value,
-.date-input--centered::-webkit-datetime-edit {
-  display: block;
+.date-input--centered::-webkit-date-and-time-value {
+  display: flex;
   width: 100%;
+  height: 100%;
   min-width: 0;
+  min-height: 1.5em;
   max-width: 100%;
+  align-items: center;
+  justify-content: center;
   margin: 0;
   padding: 0;
+  line-height: normal;
+  text-align: center;
+}
+
+.date-input--centered::-webkit-datetime-edit {
+  display: inline-flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  line-height: normal;
   text-align: center;
 }
 
@@ -653,7 +698,15 @@ select {
 .tooltip {
   position: relative;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
   color: var(--subtle);
+}
+
+.tooltip::before {
+  position: absolute;
+  inset: -15px;
+  content: "";
 }
 
 .tooltip__content {
@@ -1001,7 +1054,8 @@ select {
   border-bottom: 0;
 }
 
-.ticker-results button:hover {
+.ticker-results button:hover,
+.ticker-results button.active {
   background: var(--primary-soft);
 }
 
@@ -1168,6 +1222,11 @@ select {
   border: 1px solid color-mix(in srgb, var(--danger) 26%, var(--line));
   border-radius: 10px;
   font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.error-panel > div {
+  min-width: 0;
 }
 
 .error-panel svg {
@@ -1222,6 +1281,7 @@ select {
 
 .warning-panel summary {
   display: flex;
+  min-height: 44px;
   align-items: center;
   padding: 11px 13px;
   gap: 8px;
@@ -1334,8 +1394,11 @@ select {
 .portfolio-summary__balance strong {
   margin-top: 4px;
   color: var(--ink-strong);
-  font-size: 24px;
+  font-size: clamp(20px, 5.5vw, 24px);
+  font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .portfolio-summary__metrics {
@@ -1351,6 +1414,8 @@ select {
   margin-top: 4px;
   color: var(--ink-strong);
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .table-scroll {
@@ -1361,6 +1426,10 @@ select {
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--line);
   border-radius: 11px;
+}
+
+.table-scroll:focus-visible {
+  outline-offset: 3px;
 }
 
 .metrics-table,
@@ -1674,6 +1743,7 @@ footer {
 
 .allocation-legend strong {
   color: var(--ink-strong);
+  font-variant-numeric: tabular-nums;
 }
 
 .analytics-stack {
@@ -1715,6 +1785,7 @@ footer {
   margin-top: 4px;
   color: var(--ink-strong);
   font-size: 14px;
+  overflow-wrap: anywhere;
 }
 
 .exposure-bars {
@@ -1753,6 +1824,12 @@ footer {
 .exposure-row strong {
   color: var(--ink-strong);
   text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.exposure-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .analytics-note {
@@ -1813,6 +1890,9 @@ footer {
 }
 
 .methodology summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
   cursor: pointer;
   color: var(--ink);
   font-weight: 750;
@@ -1989,6 +2069,8 @@ footer p {
     min-height: 60px;
     padding: max(8px, env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 8px calc(12px + env(safe-area-inset-left));
     gap: 8px;
+    background: color-mix(in srgb, var(--surface) 98%, var(--page));
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--ink-strong) 8%, transparent);
   }
 
   .brand {
@@ -2106,6 +2188,11 @@ footer p {
     white-space: nowrap;
   }
 
+  .configuration-tabs .tab-label {
+    display: block;
+    max-width: 100%;
+  }
+
   .configuration-body {
     padding: 14px;
   }
@@ -2144,6 +2231,10 @@ footer p {
     height: 48px;
     min-height: 48px;
     font-size: 16px;
+    scroll-margin-bottom: calc(94px + env(safe-area-inset-bottom));
+  }
+
+  .configuration-body button {
     scroll-margin-bottom: calc(94px + env(safe-area-inset-bottom));
   }
 
@@ -2387,7 +2478,8 @@ footer p {
     padding: 10px 14px max(10px, env(safe-area-inset-bottom));
     border-right: 1px solid var(--line);
     border-left: 1px solid var(--line);
-    box-shadow: 0 -10px 28px color-mix(in srgb, var(--ink-strong) 8%, transparent);
+    background: color-mix(in srgb, var(--surface) 98%, var(--page));
+    box-shadow: 0 -10px 28px color-mix(in srgb, var(--ink-strong) 10%, transparent);
   }
 
   .run-bar p {
@@ -2526,6 +2618,11 @@ footer p {
     width: 100%;
   }
 
+  .subtoolbar label {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .allocation-grid {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -2546,11 +2643,28 @@ footer p {
     margin-bottom: 28px;
   }
 
+  .warning-panel summary,
+  .methodology summary {
+    min-height: 48px;
+  }
+
   .tooltip__content {
-    right: -8px;
-    left: auto;
-    width: min(260px, calc(100vw - 40px));
+    right: 0;
+    left: 0;
+    width: auto;
     transform: none;
+  }
+
+  .tooltip {
+    position: static;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    margin: -12px -12px -12px -6px;
+  }
+
+  .tooltip::before {
+    display: none;
   }
 
   .recharts-default-tooltip {
@@ -2578,6 +2692,11 @@ footer p {
   .modal__footer {
     padding-right: 18px;
     padding-left: 18px;
+  }
+
+  .modal .icon-button {
+    width: 44px;
+    height: 44px;
   }
 
   .toast {
@@ -2688,9 +2807,9 @@ footer p {
 
   .mobile-status,
   .mobile-menu-trigger {
-    width: 42px;
-    height: 42px;
-    min-height: 42px;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
   }
 
   main,
@@ -2747,6 +2866,38 @@ footer p {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-contrast: more) {
+  :focus-visible {
+    outline-width: 4px;
+    outline-color: var(--primary);
+  }
+
+  input,
+  select,
+  .button,
+  .toggle,
+  .settings-section,
+  .portfolio-summary,
+  .allocation-card,
+  .analytics-card {
+    border-color: var(--ink);
+  }
+}
+
+@media (forced-colors: active) {
+  .configuration-tabs button.active::after,
+  .result-tabs button.active::after {
+    background: Highlight;
+  }
+
+  .status-dot,
+  .series-swatch,
+  .chart-legend__swatch,
+  .allocation-legend__swatch {
+    forced-color-adjust: none;
   }
 }
 

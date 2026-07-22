@@ -29,6 +29,7 @@ export function Header(props: HeaderProps) {
   const { t, locale, theme, connected } = props;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -40,20 +41,45 @@ export function Header(props: HeaderProps) {
     }
 
     function closeOnEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setMobileMenuOpen(false);
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileMenuOpen(false);
+        mobileMenuTriggerRef.current?.focus();
+      }
     }
 
+    const focusTimer = window.setTimeout(() => {
+      mobileMenuRef.current?.querySelector<HTMLElement>("[role='menuitem']")?.focus();
+    }, 0);
     document.addEventListener("pointerdown", closeOnOutsidePress);
     document.addEventListener("keydown", closeOnEscape);
     return () => {
+      window.clearTimeout(focusTimer);
       document.removeEventListener("pointerdown", closeOnOutsidePress);
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [mobileMenuOpen]);
 
-  function runMobileAction(action: () => void) {
+  function runMobileAction(action: () => void, restoreFocus = true) {
     setMobileMenuOpen(false);
+    if (!restoreFocus) mobileMenuTriggerRef.current?.focus();
     action();
+    if (restoreFocus) window.setTimeout(() => mobileMenuTriggerRef.current?.focus(), 0);
+  }
+
+  function moveMobileMenuFocus(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']"));
+    if (!items.length) return;
+
+    event.preventDefault();
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement);
+    let nextIndex = currentIndex;
+    if (event.key === "ArrowDown") nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
+    else if (event.key === "ArrowUp") nextIndex = currentIndex <= 0 ? items.length - 1 : currentIndex - 1;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = items.length - 1;
+    items[nextIndex]?.focus();
   }
 
   return (
@@ -116,10 +142,12 @@ export function Header(props: HeaderProps) {
           <span className={`status-dot ${connected ? "status-dot--ok" : ""}`} />
         </button>
         <button
+          ref={mobileMenuTriggerRef}
           type="button"
           className="icon-button mobile-menu-trigger"
           onClick={() => setMobileMenuOpen((open) => !open)}
           aria-expanded={mobileMenuOpen}
+          aria-haspopup="menu"
           aria-controls="mobile-action-menu"
           aria-label={mobileMenuOpen ? t("close") : t("moreActions")}
           title={mobileMenuOpen ? t("close") : t("moreActions")}
@@ -128,7 +156,13 @@ export function Header(props: HeaderProps) {
         </button>
 
         {mobileMenuOpen && (
-          <div id="mobile-action-menu" className="mobile-action-menu" role="menu" aria-label={t("moreActions")}>
+          <div
+            id="mobile-action-menu"
+            className="mobile-action-menu"
+            role="menu"
+            aria-label={t("moreActions")}
+            onKeyDown={moveMobileMenuFocus}
+          >
             <button type="button" role="menuitem" onClick={() => runMobileAction(props.onShare)}>
               <Share2 size={18} /><span>{t("share")}</span>
             </button>
@@ -142,7 +176,7 @@ export function Header(props: HeaderProps) {
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
               <span>{theme === "dark" ? t("lightMode") : t("darkMode")}</span>
             </button>
-            <button type="button" role="menuitem" onClick={() => runMobileAction(props.onConnection)}>
+            <button type="button" role="menuitem" onClick={() => runMobileAction(props.onConnection, false)}>
               <Settings2 size={18} /><span>{t("connection")}</span>
               <span className={`mobile-menu-status status-dot ${connected ? "status-dot--ok" : ""}`} />
             </button>

@@ -35,7 +35,7 @@ docs/       架構、計算方法、API 與逐步部署手冊
 .github/    CI、GitHub Pages、Cloud Run 與 Dependabot 自動化
 ```
 
-詳細設計請參閱[系統架構](docs/ARCHITECTURE.md)與[回測方法](docs/METHODOLOGY.md)。
+詳細設計請參閱[系統架構](docs/ARCHITECTURE.md)、[回測方法](docs/METHODOLOGY.md)與[UI 品質標準](docs/UI_QUALITY.md)。
 
 ## 本機啟動
 
@@ -90,5 +90,6 @@ npm run build
 - [系統架構與安全邊界](docs/ARCHITECTURE.md)
 - [回測計算方法與限制](docs/METHODOLOGY.md)
 - [API 使用說明](docs/API.md)
+- [UI 品質標準與發版閘門](docs/UI_QUALITY.md)
 - [GitHub Pages＋Cloud Run 部署](docs/DEPLOYMENT.md)
 - [版本封存與還原](docs/RELEASES.md)

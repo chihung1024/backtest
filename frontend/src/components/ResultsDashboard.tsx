@@ -65,6 +65,7 @@ export function ResultsDashboard({
   const hasAnalytics = response.results.some(
     (result) => result.factor_analysis || result.style_analysis || result.regime_analysis,
   );
+  const safeSelectedPortfolio = Math.min(selectedPortfolio, Math.max(0, allResults.length - 1));
 
   const tabs: Array<{ id: ResultTab; label: string; icon: typeof Table2; hidden?: boolean }> = [
     { id: "overview", label: t("overview"), icon: Table2 },
@@ -76,6 +77,31 @@ export function ResultsDashboard({
     { id: "allocation", label: t("allocation"), icon: PieIcon },
     { id: "analytics", label: t("analytics"), icon: Sparkles, hidden: !hasAnalytics },
   ];
+  const visibleTabs = tabs.filter((tab) => !tab.hidden);
+
+  function activateTab(tabId: ResultTab, button?: HTMLButtonElement) {
+    setActiveTab(tabId);
+    button?.scrollIntoView?.({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }
+
+  function moveResultTab(event: React.KeyboardEvent<HTMLButtonElement>, currentIndex: number) {
+    let nextIndex: number;
+    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % visibleTabs.length;
+    else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + visibleTabs.length) % visibleTabs.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = visibleTabs.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextTab = visibleTabs[nextIndex];
+    const button = document.getElementById(`result-${nextTab.id}-tab`) as HTMLButtonElement | null;
+    activateTab(nextTab.id, button ?? undefined);
+    button?.focus();
+  }
 
   return (
     <section className="results-shell" aria-labelledby="results-title">
@@ -106,16 +132,20 @@ export function ResultsDashboard({
         </details>
       )}
 
-      <div className="result-tabs" role="tablist">
-        {tabs.filter((tab) => !tab.hidden).map((tab) => {
+      <div className="result-tabs" role="tablist" aria-label={t("results")}>
+        {visibleTabs.map((tab, index) => {
           const Icon = tab.icon;
           return (
             <button
+              id={`result-${tab.id}-tab`}
               type="button"
               role="tab"
+              aria-controls="result-panel"
               aria-selected={activeTab === tab.id}
+              tabIndex={activeTab === tab.id ? 0 : -1}
               className={activeTab === tab.id ? "active" : ""}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={(event) => activateTab(tab.id, event.currentTarget)}
+              onKeyDown={(event) => moveResultTab(event, index)}
               key={tab.id}
             >
               <Icon size={16} />{tab.label}
@@ -124,7 +154,12 @@ export function ResultsDashboard({
         })}
       </div>
 
-      <div className="result-content" role="tabpanel">
+      <div
+        id="result-panel"
+        className="result-content"
+        role="tabpanel"
+        aria-labelledby={`result-${activeTab}-tab`}
+      >
         {activeTab === "overview" && (
           <Overview results={allResults} currency={response.base_currency} locale={locale} t={t} />
         )}
@@ -140,20 +175,20 @@ export function ResultsDashboard({
           />
         )}
         {activeTab === "drawdown" && (
-          <DrawdownChart data={chartSeries} results={allResults} locale={locale} />
+          <DrawdownChart data={chartSeries} results={allResults} locale={locale} ariaLabel={t("drawdown")} />
         )}
-        {activeTab === "annual" && <AnnualChart data={annualData} results={allResults} />}
+        {activeTab === "annual" && <AnnualChart data={annualData} results={allResults} ariaLabel={t("annualReturns")} />}
         {activeTab === "monthly" && (
           <MonthlyHeatmap
-            result={allResults[selectedPortfolio]}
+            result={allResults[safeSelectedPortfolio]}
             results={allResults}
-            selected={selectedPortfolio}
+            selected={safeSelectedPortfolio}
             onSelect={setSelectedPortfolio}
             t={t}
           />
         )}
         {activeTab === "income" && (
-          <IncomeChart data={incomeData} results={allResults} currency={response.base_currency} locale={locale} />
+          <IncomeChart data={incomeData} results={allResults} currency={response.base_currency} locale={locale} ariaLabel={t("income")} />
         )}
         {activeTab === "allocation" && (
           <AllocationCharts results={response.results} t={t} />
@@ -232,7 +267,7 @@ function Overview({
         ))}
       </div>
 
-      <div className="table-scroll">
+      <div className="table-scroll" role="region" aria-label={t("overview")} tabIndex={0}>
         <table className="metrics-table">
           <thead>
             <tr><th>{t("metric")}</th>{results.map((result) => <th key={result.name}>{result.display_name}</th>)}</tr>
@@ -308,7 +343,7 @@ function GrowthChart({
           ))}
         </div>
       </div>
-      <ChartFrame results={results}>
+      <ChartFrame results={results} ariaLabel={t("growth")}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             key={scale.effectiveMode}
@@ -327,7 +362,7 @@ function GrowthChart({
             />
             <YAxis
               type="number"
-              width={96}
+              width={78}
               scale={scale.effectiveMode === "log" ? "log" : "auto"}
               domain={scale.logDomain ?? [0, "auto"]}
               ticks={scale.effectiveMode === "log" ? scale.logTicks : undefined}
@@ -349,13 +384,13 @@ function GrowthChart({
   );
 }
 
-function DrawdownChart({ data, results, locale }: ChartProps & { locale: string }) {
+function DrawdownChart({ data, results, locale, ariaLabel }: ChartProps & { locale: string; ariaLabel: string }) {
   const dateAxis = useMemo(
     () => resolveDateAxis(data.map((row) => String(row.date)), locale),
     [data, locale],
   );
   return (
-    <ChartFrame results={results}>
+    <ChartFrame results={results} ariaLabel={ariaLabel}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 16, right: 18, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 5" vertical={false} />
@@ -382,9 +417,9 @@ function DrawdownChart({ data, results, locale }: ChartProps & { locale: string 
   );
 }
 
-function AnnualChart({ data, results }: ChartProps) {
+function AnnualChart({ data, results, ariaLabel }: ChartProps & { ariaLabel: string }) {
   return (
-    <ChartFrame results={results}>
+    <ChartFrame results={results} ariaLabel={ariaLabel}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 16, right: 18, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 5" vertical={false} />
@@ -400,9 +435,9 @@ function AnnualChart({ data, results }: ChartProps) {
   );
 }
 
-function IncomeChart({ data, results, currency, locale }: ChartProps & { currency: string; locale: string }) {
+function IncomeChart({ data, results, currency, locale, ariaLabel }: ChartProps & { currency: string; locale: string; ariaLabel: string }) {
   return (
-    <ChartFrame results={results}>
+    <ChartFrame results={results} ariaLabel={ariaLabel}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 16, right: 18, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 5" vertical={false} />
@@ -442,9 +477,9 @@ function MonthlyHeatmap({
           </select>
         </label>
       </div>
-      <div className="table-scroll">
+      <div className="table-scroll" role="region" aria-label={t("monthlyReturns")} tabIndex={0}>
         <table className="heatmap">
-          <thead><tr><th><CalendarDays size={15} /></th>{Array.from({ length: 12 }, (_, index) => <th key={index}>{index + 1}</th>)}<th>YTD</th></tr></thead>
+          <thead><tr><th><CalendarDays size={15} aria-hidden="true" /><span className="visually-hidden">{t("period")}</span></th>{Array.from({ length: 12 }, (_, index) => <th key={index}>{index + 1}</th>)}<th>YTD</th></tr></thead>
           <tbody>
             {years.map((year) => {
               const values = Array.from({ length: 12 }, (_, month) => lookup.get(`${year}-${month + 1}`));
@@ -543,7 +578,12 @@ function AnalyticsPanels({ results, t }: { results: PortfolioResult[]; t: Transl
           {result.regime_analysis && (
             <div className="analytics-block">
               <h4>{t("regimePerformance")}</h4>
-              <div className="table-scroll">
+              <div
+                className="table-scroll"
+                role="region"
+                aria-label={`${result.display_name} · ${t("regimePerformance")}`}
+                tabIndex={0}
+              >
                 <table className="metrics-table">
                   <thead><tr><th>{t("regime")}</th><th>{t("months")}</th><th>{t("annualizedReturn")}</th><th>{t("annualizedVolatility")}</th></tr></thead>
                   <tbody>{result.regime_analysis.regimes.map((regime) => (
@@ -574,10 +614,18 @@ function ExposureBar({ name, value, percent = false }: { name: string; value: nu
   );
 }
 
-function ChartFrame({ children, results }: { children: React.ReactNode; results: PortfolioResult[] }) {
+function ChartFrame({
+  children,
+  results,
+  ariaLabel,
+}: {
+  children: React.ReactNode;
+  results: PortfolioResult[];
+  ariaLabel: string;
+}) {
   return (
     <div className="chart-block">
-      <div className="chart-frame">{children}</div>
+      <div className="chart-frame" role="img" aria-label={ariaLabel}>{children}</div>
       <ul className="chart-legend">
         {results.map((result, index) => (
           <li key={result.name} title={result.display_name}>

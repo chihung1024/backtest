@@ -1,5 +1,5 @@
 import { CheckCircle2, KeyRound, LoaderCircle, Server, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { checkHealth } from "../api";
 import type { Translator } from "../i18n";
 import type { ApiConnection } from "../types";
@@ -37,11 +37,65 @@ function ConnectionDialogContent({
   const [draft, setDraft] = useState(connection);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
+  const dialogRef = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const dialog = dialogRef.current;
     document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = previousOverflow; };
+
+    const focusableSelector = [
+      "button:not([disabled])",
+      "input:not([disabled])",
+      "select:not([disabled])",
+      "textarea:not([disabled])",
+      "[href]",
+      "[tabindex]:not([tabindex='-1'])",
+    ].join(",");
+
+    (dialog?.querySelector<HTMLElement>("input")
+      ?? dialog?.querySelector<HTMLElement>(focusableSelector))?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus();
+    };
   }, []);
 
   async function test() {
@@ -59,10 +113,13 @@ function ConnectionDialogContent({
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
+        ref={dialogRef}
         className="modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="connection-title"
+        aria-describedby="connection-description"
+        tabIndex={-1}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="modal__header">
@@ -93,9 +150,9 @@ function ConnectionDialogContent({
               autoComplete="off"
             />
           </label>
-          <p className="privacy-note">{t("connectionHint")}</p>
-          {status === "ok" && <div className="inline-success"><CheckCircle2 size={17} />{t("connected")}</div>}
-          {status === "error" && <div className="inline-error">{t("disconnected")}</div>}
+          <p id="connection-description" className="privacy-note">{t("connectionHint")}</p>
+          {status === "ok" && <div className="inline-success" role="status"><CheckCircle2 size={17} />{t("connected")}</div>}
+          {status === "error" && <div className="inline-error" role="status">{t("disconnected")}</div>}
         </div>
         <div className="modal__footer">
           <button type="button" className="button button--ghost modal__test-action" onClick={test} disabled={testing}>
