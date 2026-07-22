@@ -132,7 +132,7 @@ class AnalyticsConfig(BaseModel):
 class BacktestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    portfolios: list[PortfolioDefinition] = Field(min_length=1, max_length=3)
+    portfolios: list[PortfolioDefinition] = Field(min_length=1, max_length=5)
     benchmark: TickerSymbol | None = None
     start_date: date
     end_date: date

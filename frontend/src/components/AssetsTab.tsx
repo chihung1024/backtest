@@ -1,7 +1,8 @@
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { Eraser, Minus, Plus, Trash2 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
+import { blankAsset, blankWeights, MAX_PORTFOLIOS } from "../defaults";
 import type { Translator } from "../i18n";
-import type { ApiConnection, AssetRow, BacktestFormState } from "../types";
+import type { ApiConnection, AssetRow, BacktestFormState, WeightValue } from "../types";
 import { TickerInput } from "./TickerInput";
 
 export function AssetsTab({
@@ -26,7 +27,7 @@ export function AssetsTab({
     }));
   }
 
-  function updateWeight(asset: AssetRow, portfolioIndex: number, value: number) {
+  function updateWeight(asset: AssetRow, portfolioIndex: number, value: WeightValue) {
     const weights = [...asset.weights];
     weights[portfolioIndex] = value;
     updateAsset(asset.id, { weights });
@@ -36,10 +37,7 @@ export function AssetsTab({
     if (model.assets.length >= 20) return;
     setModel((current) => ({
       ...current,
-      assets: [
-        ...current.assets,
-        { id: crypto.randomUUID(), symbol: "", weights: [0, 0, 0] },
-      ],
+      assets: [...current.assets, blankAsset()],
     }));
   }
 
@@ -53,8 +51,32 @@ export function AssetsTab({
   function changePortfolioCount(delta: number) {
     setModel((current) => ({
       ...current,
-      portfolioCount: Math.min(3, Math.max(1, current.portfolioCount + delta)),
+      portfolioCount: Math.min(MAX_PORTFOLIOS, Math.max(1, current.portfolioCount + delta)),
     }));
+  }
+
+  function clearAsset(id: string) {
+    updateAsset(id, { symbol: "", weights: blankWeights() });
+  }
+
+  function clearPortfolio(portfolioIndex: number) {
+    setModel((current) => {
+      const names = Array.from(
+        { length: MAX_PORTFOLIOS },
+        (_, index) => index === portfolioIndex ? "" : (current.portfolioNames[index] ?? ""),
+      );
+      return {
+        ...current,
+        portfolioNames: names,
+        assets: current.assets.map((asset) => ({
+          ...asset,
+          weights: Array.from(
+            { length: MAX_PORTFOLIOS },
+            (_, index) => index === portfolioIndex ? "" : (asset.weights[index] ?? ""),
+          ),
+        })),
+      };
+    });
   }
 
   return (
@@ -75,7 +97,7 @@ export function AssetsTab({
             type="button"
             className="button button--subtle"
             onClick={() => changePortfolioCount(1)}
-            disabled={model.portfolioCount >= 3}
+            disabled={model.portfolioCount >= MAX_PORTFOLIOS}
           >
             <Plus size={16} />{t("addPortfolio")}
           </button>
@@ -90,24 +112,40 @@ export function AssetsTab({
         </div>
       </div>
 
+      <p className="weight-rule-hint">{t("weightRuleHint")}</p>
+
       <div
         className="asset-grid"
         style={{ "--portfolio-count": model.portfolioCount } as React.CSSProperties}
       >
         <div className="asset-grid__header asset-grid__asset-label">{t("asset")}</div>
         {Array.from({ length: model.portfolioCount }, (_, index) => (
-          <label className="asset-grid__header portfolio-name" key={index}>
-            <span>{t("portfolio")} #{index + 1}</span>
+          <div className="asset-grid__header portfolio-name" key={index}>
+            <div className="portfolio-name__heading">
+              <span>{t("portfolio")} #{index + 1}</span>
+              <button
+                type="button"
+                className="icon-button clear-button"
+                onClick={() => clearPortfolio(index)}
+                aria-label={`${t("clearPortfolio")} ${index + 1}`}
+                title={t("clearPortfolio")}
+              >
+                <Eraser size={15} />
+              </button>
+            </div>
             <input
-              value={model.portfolioNames[index]}
+              value={model.portfolioNames[index] ?? ""}
               onChange={(event) => {
-                const names = [...model.portfolioNames];
-                names[index] = event.target.value;
-                setModel((current) => ({ ...current, portfolioNames: names }));
+                const value = event.target.value;
+                setModel((current) => {
+                  const names = [...current.portfolioNames];
+                  names[index] = value;
+                  return { ...current, portfolioNames: names };
+                });
               }}
               aria-label={`${t("portfolioName")} ${index + 1}`}
             />
-          </label>
+          </div>
         ))}
         <div className="asset-grid__header asset-grid__action" />
 
@@ -121,6 +159,7 @@ export function AssetsTab({
             t={t}
             onSymbol={(symbol) => updateAsset(asset.id, { symbol })}
             onWeight={(portfolioIndex, value) => updateWeight(asset, portfolioIndex, value)}
+            onClear={() => clearAsset(asset.id)}
             onRemove={() => removeAsset(asset.id)}
           />
         ))}
@@ -128,10 +167,14 @@ export function AssetsTab({
         <div className="asset-grid__total-label">{t("total")}</div>
         {totals.map((total, index) => {
           const complete = Math.abs(total - 100) <= 0.05;
+          const empty = total <= 0.05;
           return (
-            <div className={`weight-total ${complete ? "weight-total--complete" : ""}`} key={index}>
+            <div
+              className={`weight-total ${complete ? "weight-total--complete" : ""} ${empty ? "weight-total--empty" : ""}`}
+              key={index}
+            >
               <strong>{total.toFixed(1)}%</strong>
-              <span>{complete ? t("ready") : t("needsAdjustment")}</span>
+              <span>{empty ? t("notUsed") : complete ? t("ready") : t("needsAdjustment")}</span>
             </div>
           );
         })}
@@ -158,6 +201,7 @@ function AssetGridRow({
   t,
   onSymbol,
   onWeight,
+  onClear,
   onRemove,
 }: {
   asset: AssetRow;
@@ -166,7 +210,8 @@ function AssetGridRow({
   connection: ApiConnection;
   t: Translator;
   onSymbol: (symbol: string) => void;
-  onWeight: (portfolioIndex: number, value: number) => void;
+  onWeight: (portfolioIndex: number, value: WeightValue) => void;
+  onClear: () => void;
   onRemove: () => void;
 }) {
   return (
@@ -192,16 +237,36 @@ function AssetGridRow({
             min="0"
             max="100"
             step="0.1"
-            value={asset.weights[portfolioIndex] || ""}
-            onChange={(event) => onWeight(portfolioIndex, Number(event.target.value))}
+            value={asset.weights[portfolioIndex] ?? ""}
+            onChange={(event) => onWeight(
+              portfolioIndex,
+              event.target.value === "" ? "" : Number(event.target.value),
+            )}
             aria-label={`${asset.symbol || `${t("asset")} ${rowIndex + 1}`} ${t("weight")} ${portfolioIndex + 1}`}
           />
           <span>%</span>
         </label>
       ))}
-      <button type="button" className="icon-button asset-delete" onClick={onRemove} aria-label="Remove asset">
-        <Trash2 size={16} />
-      </button>
+      <div className="asset-row-actions">
+        <button
+          type="button"
+          className="icon-button asset-clear"
+          onClick={onClear}
+          aria-label={`${t("clearAssetRow")} ${rowIndex + 1}`}
+          title={t("clearAssetRow")}
+        >
+          <Eraser size={16} />
+        </button>
+        <button
+          type="button"
+          className="icon-button asset-delete"
+          onClick={onRemove}
+          aria-label={`${t("removeAssetRow")} ${rowIndex + 1}`}
+          title={t("removeAssetRow")}
+        >
+          <Trash2 size={16} />
+        </button>
+      </div>
     </>
   );
 }

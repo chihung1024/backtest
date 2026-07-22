@@ -1,17 +1,20 @@
 import type { BacktestFormState, BacktestRequest, PortfolioResult } from "./types";
 
-export const chartColors = ["#19a88a", "#4169e1", "#f59e0b", "#9b5de5"];
+export const chartColors = ["#19a88a", "#4169e1", "#f59e0b", "#9b5de5", "#e45756", "#5c946e"];
 
 export function buildRequest(model: BacktestFormState): BacktestRequest {
-  const portfolios = Array.from({ length: model.portfolioCount }, (_, portfolioIndex) => ({
-    name: model.portfolioNames[portfolioIndex] || `Portfolio ${portfolioIndex + 1}`,
-    assets: model.assets
+  const portfolios = Array.from({ length: model.portfolioCount }, (_, portfolioIndex) => {
+    const assets = model.assets
       .filter((asset) => asset.symbol.trim() && Number(asset.weights[portfolioIndex]) > 0)
       .map((asset) => ({
         symbol: asset.symbol.trim().toUpperCase(),
         weight: Number(asset.weights[portfolioIndex]),
-      })),
-  }));
+      }));
+    return {
+      name: model.portfolioNames[portfolioIndex]?.trim() || `Portfolio ${portfolioIndex + 1}`,
+      assets,
+    };
+  }).filter((portfolio) => portfolio.assets.length > 0);
   return {
     portfolios,
     benchmark: model.benchmark.trim().toUpperCase() || null,
@@ -58,18 +61,27 @@ export function validateModel(model: BacktestFormState): string[] {
     errors.push("開始日期必須早於結束日期");
   }
   if (model.initialAmount <= 0) errors.push("初始金額必須大於零");
+  let completedPortfolios = 0;
   for (let index = 0; index < model.portfolioCount; index += 1) {
-    const active = model.assets.filter((asset) => asset.symbol && asset.weights[index] > 0);
-    const total = active.reduce((sum, asset) => sum + Number(asset.weights[index]), 0);
-    if (!active.length) errors.push(`投資組合 ${index + 1} 至少需要一項資產`);
+    const weighted = model.assets.filter((asset) => Number(asset.weights[index]) > 0);
+    const total = weighted.reduce((sum, asset) => sum + Number(asset.weights[index]), 0);
+    if (total <= 0.05) continue;
     if (Math.abs(total - 100) > 0.05) {
       errors.push(`投資組合 ${index + 1} 權重目前為 ${total.toFixed(2)}%，必須等於 100%`);
     }
-    const symbols = active.map((asset) => asset.symbol.trim().toUpperCase());
+    const blankSymbols = weighted.filter((asset) => !asset.symbol.trim());
+    if (blankSymbols.length) {
+      errors.push(`投資組合 ${index + 1} 有權重但尚未填寫資產代碼`);
+    }
+    const symbols = weighted
+      .map((asset) => asset.symbol.trim().toUpperCase())
+      .filter(Boolean);
     if (new Set(symbols).size !== symbols.length) {
       errors.push(`投資組合 ${index + 1} 有重複代碼`);
     }
+    if (Math.abs(total - 100) <= 0.05 && !blankSymbols.length) completedPortfolios += 1;
   }
+  if (!completedPortfolios) errors.push("至少需要一組權重合計 100% 的投資組合");
   if (model.cashflowType !== "none" && model.cashflowFrequency === "none") {
     errors.push("啟用現金流時必須選擇頻率");
   }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { freshDefaultState } from "./defaults";
-import { createShareUrl, loadConnection, loadModel, saveConnection, saveModel } from "./storage";
+import { createShareUrl, loadConnection, loadModel, saveConnection } from "./storage";
 
 describe("browser persistence", () => {
   beforeEach(() => {
@@ -8,24 +8,34 @@ describe("browser persistence", () => {
     window.location.hash = "";
   });
 
-  it("restores saved portfolio names instead of replacing them with defaults", () => {
-    const model = freshDefaultState();
-    model.portfolioNames = ["Core", "Income", "Defensive"];
-    saveModel(model);
+  it("starts from blank defaults and removes stale saved models on a regular load", () => {
+    const stale = freshDefaultState(3);
+    stale.portfolioNames[0] = "Old saved model";
+    stale.assets[0].symbol = "VT";
+    stale.assets[0].weights[0] = 100;
+    localStorage.setItem("portfolio-lab:model:v2", JSON.stringify(stale));
 
-    expect(loadModel().portfolioNames).toEqual(["Core", "Income", "Defensive"]);
+    const loaded = loadModel();
+
+    expect(loaded.portfolioCount).toBe(5);
+    expect(loaded.portfolioNames).toEqual(["", "", "", "", ""]);
+    expect(loaded.assets.every((asset) => asset.symbol === "")).toBe(true);
+    expect(localStorage.getItem("portfolio-lab:model:v2")).toBeNull();
   });
 
   it("round-trips a unicode model through a share URL", () => {
     const model = freshDefaultState();
     model.portfolioNames[0] = "台灣核心策略";
+    model.assets[0].symbol = "0050.TW";
+    model.assets[0].weights[0] = 100;
     const url = createShareUrl(model);
     window.location.hash = new URL(url).hash;
 
     expect(loadModel().portfolioNames[0]).toBe("台灣核心策略");
+    expect(loadModel().assets[0].weights[0]).toBe(100);
   });
 
-  it("migrates legacy models to daily TWD valuation", () => {
+  it("does not restore legacy models and keeps daily TWD defaults", () => {
     const legacy = freshDefaultState();
     localStorage.setItem(
       "portfolio-lab:model:v1",
@@ -36,6 +46,7 @@ describe("browser persistence", () => {
 
     expect(restored.baseCurrency).toBe("TWD");
     expect(restored.outputFrequency).toBe("daily");
+    expect(restored.assets.every((asset) => asset.symbol === "")).toBe(true);
   });
 
   it("stores the API key locally but never in a shared model URL", () => {

@@ -1,5 +1,5 @@
-import { defaultFormState } from "./defaults";
-import type { ApiConnection, BacktestFormState, Locale, Theme } from "./types";
+import { freshDefaultState, MAX_PORTFOLIOS, preferredPortfolioCount } from "./defaults";
+import type { ApiConnection, BacktestFormState, Locale, Theme, WeightValue } from "./types";
 
 const MODEL_KEY = "portfolio-lab:model:v2";
 const LEGACY_MODEL_KEY = "portfolio-lab:model:v1";
@@ -11,23 +11,12 @@ export function loadModel(): BacktestFormState {
   const fromShare = readSharedModel();
   if (fromShare) return mergeModel(fromShare);
   try {
-    const saved = localStorage.getItem(MODEL_KEY);
-    if (saved) return mergeModel(JSON.parse(saved) as Partial<BacktestFormState>);
-    const legacy = localStorage.getItem(LEGACY_MODEL_KEY);
-    return legacy
-      ? mergeModel({
-          ...(JSON.parse(legacy) as Partial<BacktestFormState>),
-          baseCurrency: "TWD",
-          outputFrequency: "daily",
-        })
-      : structuredClone(defaultFormState);
+    localStorage.removeItem(MODEL_KEY);
+    localStorage.removeItem(LEGACY_MODEL_KEY);
   } catch {
-    return structuredClone(defaultFormState);
+    // Storage can be unavailable in strict privacy modes; blank defaults still work.
   }
-}
-
-export function saveModel(model: BacktestFormState): void {
-  localStorage.setItem(MODEL_KEY, JSON.stringify(model));
+  return freshDefaultState();
 }
 
 export function loadConnection(): ApiConnection {
@@ -91,15 +80,36 @@ function readSharedModel(): Partial<BacktestFormState> | null {
 }
 
 function mergeModel(saved: Partial<BacktestFormState>): BacktestFormState {
-  const defaults = structuredClone(defaultFormState);
+  const requestedCount = Number(saved.portfolioCount);
+  const portfolioCount = Number.isFinite(requestedCount)
+    ? Math.min(MAX_PORTFOLIOS, Math.max(1, Math.trunc(requestedCount)))
+    : preferredPortfolioCount();
+  const defaults = freshDefaultState(portfolioCount);
   return {
     ...defaults,
     ...saved,
+    portfolioCount,
     baseCurrency: "TWD",
-    assets: saved.assets?.length ? saved.assets : defaults.assets,
+    outputFrequency: "daily",
+    assets: saved.assets?.length
+      ? saved.assets.slice(0, 20).map((asset) => ({
+          id: asset.id || crypto.randomUUID(),
+          symbol: asset.symbol || "",
+          weights: Array.from(
+            { length: MAX_PORTFOLIOS },
+            (_, index) => normalizeWeight(asset.weights?.[index]),
+          ),
+        }))
+      : defaults.assets,
     portfolioNames: Array.from(
-      { length: 3 },
-      (_, index) => saved.portfolioNames?.[index] || defaults.portfolioNames[index],
+      { length: MAX_PORTFOLIOS },
+      (_, index) => saved.portfolioNames?.[index] ?? "",
     ),
   };
+}
+
+function normalizeWeight(value: unknown): WeightValue {
+  if (value === "" || value === null || value === undefined) return "";
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : "";
 }

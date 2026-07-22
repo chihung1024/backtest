@@ -15,7 +15,6 @@ import {
   loadTheme,
   saveConnection,
   saveLocale,
-  saveModel,
   saveTheme,
 } from "./storage";
 import type { ApiConnection, BacktestResponse, Locale, Theme } from "./types";
@@ -43,6 +42,10 @@ export default function App() {
   const [toast, setToast] = useState("");
   const resultRef = useRef<HTMLDivElement>(null);
   const t = translator(locale);
+  const activeRequest = buildRequest(model);
+  const activeAssetCount = new Set(
+    activeRequest.portfolios.flatMap((portfolio) => portfolio.assets.map((asset) => asset.symbol)),
+  ).size;
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -53,11 +56,6 @@ export default function App() {
     document.documentElement.lang = locale === "zh-TW" ? "zh-Hant" : "en";
     saveLocale(locale);
   }, [locale]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => saveModel(model), 250);
-    return () => window.clearTimeout(timer);
-  }, [model]);
 
   useEffect(() => {
     let active = true;
@@ -121,6 +119,7 @@ export default function App() {
         onConnection={() => setConnectionOpen(true)}
         onShare={() => void share()}
         onReset={() => {
+          window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
           setModel(freshDefaultState());
           setResponse(null);
           setErrors([]);
@@ -136,7 +135,7 @@ export default function App() {
             <p>{t("appTagline")}</p>
           </div>
           <div className="hero__facts" aria-label="Capabilities">
-            <div><strong>3</strong><span>Portfolios</span></div>
+            <div><strong>5</strong><span>Portfolios</span></div>
             <div><strong>20</strong><span>Assets each</span></div>
             <div><strong>TWD · Daily</strong><span>Global valuation</span></div>
           </div>
@@ -188,7 +187,11 @@ export default function App() {
           )}
 
           <div className="run-bar">
-            <p>{loading ? t("apiWakeHint") : `${model.portfolioCount} portfolio · ${model.assets.filter((asset) => asset.symbol).length} assets · ${model.baseCurrency}`}</p>
+            <p>
+              {loading
+                ? t("apiWakeHint")
+                : `${activeRequest.portfolios.length} ${t("portfolio")} · ${activeAssetCount} ${t("asset")} · ${model.baseCurrency}`}
+            </p>
             <button type="button" className="button button--run" onClick={() => void submit()} disabled={loading}>
               {loading ? <LoaderCircle className="spin" size={19} /> : <Beaker size={19} />}
               {loading ? t("running") : t("runBacktest")}
