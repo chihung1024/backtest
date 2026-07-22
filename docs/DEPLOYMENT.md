@@ -9,8 +9,8 @@ GitHub Pages 與 Actions 對公開倉庫可用免費額度；Cloud Run、Cloud B
 
 目前正式環境使用 Google Cloud 專案 `backtest-465701`（專案編號
 `454423251671`）、`asia-east1` 區域與 Cloud Run 服務
-`portfolio-backtest-api`。Billing 已建立每月 TWD 150 預算，於 50%、90%、
-100% 發送通知。下列公開資源識別碼會保存在 workflow；真正金鑰只保存在
+`portfolio-backtest-api`。Billing 已建立每月 TWD 150 預算，於 5%、20%、
+50% 發送實際支出通知。下列公開資源識別碼會保存在 workflow；真正金鑰只保存在
 Secret Manager。
 
 ## 1. GitHub Pages
@@ -214,10 +214,24 @@ curl -H "X-Backtest-Key: YOUR_KEY" \
 ## 8. 成本與維運保護
 
 - Cloud Run 已限制最多兩個執行個體、每個 512 MiB，閒置時縮到零。
-- Billing 已建立每月 TWD 150 預算與 50%、90%、100% 通知；預算不會自動停機。
+- Billing 已建立每月 TWD 150 預算與 5%、20%、50% 實際支出通知；預算不會自動停機。
+- `.github/workflows/billing-budget.yml` 只會修改連結至本專案、帳戶尾碼符合
+  `3BA9` 的唯一每月 TWD 150 預算；首次合併 workflow 或手動執行時會套用並讀回驗證
+  5%、20%、50% 三個門檻。
 - 定期查看 Cloud Run request count、錯誤率與 p95 latency。
 - 若發現異常流量，先移除 `allUsers` 的 `roles/run.invoker`，再輪替 `backtest-api-key`。
 - Artifact Registry 會保留 source deploy 映像；可設定清理政策保留最近版本以避免儲存費累積。
+
+預算 workflow 使用既有的短效 OIDC 身分，不保存 Google 私鑰。災難復原時，帳務管理員需在
+對應 Billing account 將最小的 `Billing Account Costs Manager` 角色授予部署帳號：
+
+```bash
+export BILLING_ACCOUNT="$(gcloud billing projects describe "$PROJECT_ID" \
+  --format='value(billingAccountName)')"
+gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT" \
+  --member="serviceAccount:$DEPLOY_SA" \
+  --role="roles/billing.costsManager"
+```
 
 ## 常見問題
 

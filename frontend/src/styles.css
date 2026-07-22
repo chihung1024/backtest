@@ -1263,6 +1263,67 @@ select {
   padding: 6px 0;
 }
 
+.chart-scale-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  gap: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+
+.chart-scale-toolbar__copy {
+  display: grid;
+  gap: 3px;
+}
+
+.chart-scale-toolbar__copy strong {
+  color: var(--ink-strong);
+  font-size: 16px;
+}
+
+.chart-scale-toolbar__copy span {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.scale-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  overflow: hidden;
+  padding: 3px;
+  gap: 3px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.scale-toggle button {
+  min-width: 72px;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.scale-toggle button:hover:not(:disabled) {
+  color: var(--ink-strong);
+}
+
+.scale-toggle button.active {
+  color: var(--primary-dark);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
 .recharts-cartesian-grid line {
   stroke: var(--line);
 }
@@ -1907,6 +1968,16 @@ footer p {
   .chart-frame {
     height: 390px;
     margin-left: -10px;
+  }
+
+  .chart-scale-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .scale-toggle,
+  .scale-toggle button {
+    width: 100%;
   }
 
   .subtoolbar {
