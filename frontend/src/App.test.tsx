@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 
@@ -22,6 +22,25 @@ describe("App", () => {
     expect(screen.getAllByText("投資組合回測實驗室").length).toBeGreaterThan(0);
     expect(screen.getByRole("tab", { name: /投資組合資產/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /執行回測/ })).toBeInTheDocument();
+  });
+
+  it("keeps every phone header action in one accessible menu", () => {
+    render(<App />);
+
+    const trigger = screen.getByRole("button", { name: "更多操作" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+
+    const menu = screen.getByRole("menu", { name: "更多操作" });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(within(menu).getByRole("menuitem", { name: "複製分享網址" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "恢復空白預設" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "English" })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "資料連線" })).toBeInTheDocument();
+
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "深色模式" }));
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(screen.queryByRole("menu", { name: "更多操作" })).not.toBeInTheDocument();
   });
 
   it("shows five blank portfolios and six blank asset rows on desktop", () => {
