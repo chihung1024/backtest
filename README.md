@@ -2,6 +2,8 @@
 
 一套面向美股、台股與跨幣別資產的個人投資組合回測網站。介面參考 Portfolio Visualizer 的 Portfolio Performance 工作流，以 `yfinance` 為主要行情來源，並保留透明、可測試的計算核心。
 
+線上網站：[https://chihung1024.github.io/backtest/](https://chihung1024.github.io/backtest/)
+
 > 本專案僅供個人研究與教育，不構成投資建議。Yahoo Finance 資料的使用仍受 Yahoo 與 yfinance 的使用條款限制。
 
 ## 功能
