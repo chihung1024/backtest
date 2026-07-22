@@ -122,7 +122,15 @@ export function AssetsTab({
         {Array.from({ length: model.portfolioCount }, (_, index) => (
           <div className="asset-grid__header portfolio-name" key={index}>
             <div className="portfolio-name__heading">
-              <span>{t("portfolio")} #{index + 1}</span>
+              <span className="portfolio-name__identity">
+                <span>{t("portfolio")} #{index + 1}</span>
+                <span
+                  className={`portfolio-total-badge ${Math.abs(totals[index] - 100) <= 0.05 ? "portfolio-total-badge--complete" : ""} ${totals[index] <= 0.05 ? "portfolio-total-badge--empty" : ""}`}
+                  aria-label={`${t("total")} ${totals[index].toFixed(1)}%`}
+                >
+                  {totals[index].toFixed(0)}%
+                </span>
+              </span>
               <button
                 type="button"
                 className="icon-button clear-button"
@@ -130,7 +138,7 @@ export function AssetsTab({
                 aria-label={`${t("clearPortfolio")} ${index + 1}`}
                 title={t("clearPortfolio")}
               >
-                <Eraser size={15} />
+                <Eraser size={15} /><span className="mobile-action-label">{t("clearPortfolio")}</span>
               </button>
             </div>
             <input
@@ -255,7 +263,7 @@ function AssetGridRow({
           aria-label={`${t("clearAssetRow")} ${rowIndex + 1}`}
           title={t("clearAssetRow")}
         >
-          <Eraser size={16} />
+          <Eraser size={16} /><span className="mobile-action-label">{t("clearAssetRow")}</span>
         </button>
         <button
           type="button"
@@ -264,7 +272,7 @@ function AssetGridRow({
           aria-label={`${t("removeAssetRow")} ${rowIndex + 1}`}
           title={t("removeAssetRow")}
         >
-          <Trash2 size={16} />
+          <Trash2 size={16} /><span className="mobile-action-label">{t("removeAssetRow")}</span>
         </button>
       </div>
     </>
