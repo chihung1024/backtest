@@ -39,6 +39,7 @@ import {
   formatNumber,
   formatPercent,
 } from "../utils";
+import { resolveGrowthScale, type GrowthScaleMode } from "../chartScale";
 
 type ResultTab = "overview" | "growth" | "drawdown" | "annual" | "monthly" | "income" | "allocation" | "analytics";
 
@@ -53,6 +54,7 @@ export function ResultsDashboard({
 }) {
   const [activeTab, setActiveTab] = useState<ResultTab>("overview");
   const [selectedPortfolio, setSelectedPortfolio] = useState(0);
+  const [growthScaleMode, setGrowthScaleMode] = useState<GrowthScaleMode>("auto");
   const allResults = useMemo(
     () => response.benchmark ? [...response.results, response.benchmark] : response.results,
     [response.benchmark, response.results],
@@ -129,7 +131,15 @@ export function ResultsDashboard({
           <Overview results={allResults} currency={response.base_currency} locale={locale} t={t} />
         )}
         {activeTab === "growth" && (
-          <GrowthChart data={chartSeries} results={allResults} currency={response.base_currency} locale={locale} />
+          <GrowthChart
+            data={chartSeries}
+            results={allResults}
+            currency={response.base_currency}
+            locale={locale}
+            t={t}
+            scaleMode={growthScaleMode}
+            onScaleMode={setGrowthScaleMode}
+          />
         )}
         {activeTab === "drawdown" && <DrawdownChart data={chartSeries} results={allResults} />}
         {activeTab === "annual" && <AnnualChart data={annualData} results={allResults} />}
@@ -245,25 +255,85 @@ function Overview({
   );
 }
 
-function GrowthChart({ data, results, currency, locale }: ChartProps & { currency: string; locale: string }) {
+function GrowthChart({
+  data,
+  results,
+  currency,
+  locale,
+  t,
+  scaleMode,
+  onScaleMode,
+}: ChartProps & {
+  currency: string;
+  locale: string;
+  t: Translator;
+  scaleMode: GrowthScaleMode;
+  onScaleMode: (mode: GrowthScaleMode) => void;
+}) {
+  const values = useMemo(
+    () => results.flatMap((result) => result.series.map((point) => point.value)),
+    [results],
+  );
+  const scale = useMemo(() => resolveGrowthScale(values, scaleMode), [scaleMode, values]);
+  const scaleHint = !scale.logAvailable
+    ? t("scaleLogUnavailable")
+    : scaleMode === "auto"
+      ? scale.effectiveMode === "log" ? t("scaleAutoLogHint") : t("scaleAutoLinearHint")
+      : scale.effectiveMode === "log" ? t("scaleLogHint") : t("scaleLinearHint");
+
   return (
-    <ChartFrame>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 16, right: 18, bottom: 8, left: 8 }}>
-          <CartesianGrid strokeDasharray="3 5" vertical={false} />
-          <XAxis dataKey="date" tickFormatter={yearTick} minTickGap={36} />
-          <YAxis width={84} tickFormatter={(value) => compactMoney(Number(value), currency, locale)} />
-          <Tooltip
-            formatter={(value) => formatMoney(Number(value), currency, locale)}
-            labelFormatter={(label) => dateLabel(String(label))}
-          />
-          <Legend />
-          {results.map((result, index) => (
-            <Line key={result.name} dataKey={`s${index}_value`} name={result.name} stroke={chartColors[index]} strokeWidth={2.4} dot={false} connectNulls />
+    <div className="growth-chart-wrap">
+      <div className="chart-scale-toolbar">
+        <div className="chart-scale-toolbar__copy">
+          <strong>{t("yAxisScale")}</strong>
+          <span role="status">{scaleHint}</span>
+        </div>
+        <div className="scale-toggle" role="group" aria-label={t("yAxisScale")}>
+          {(["auto", "linear", "log"] as const).map((mode) => (
+            <button
+              type="button"
+              className={scaleMode === mode ? "active" : ""}
+              aria-pressed={scaleMode === mode}
+              disabled={mode === "log" && !scale.logAvailable}
+              onClick={() => onScaleMode(mode)}
+              key={mode}
+            >
+              {t(mode === "auto" ? "scaleAuto" : mode === "linear" ? "scaleLinear" : "scaleLog")}
+            </button>
           ))}
-        </LineChart>
-      </ResponsiveContainer>
-    </ChartFrame>
+        </div>
+      </div>
+      <ChartFrame>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart
+            key={scale.effectiveMode}
+            data={data}
+            margin={{ top: 16, right: 18, bottom: 8, left: 8 }}
+          >
+            <CartesianGrid strokeDasharray="3 5" vertical={false} />
+            <XAxis dataKey="date" tickFormatter={yearTick} minTickGap={36} />
+            <YAxis
+              type="number"
+              width={96}
+              scale={scale.effectiveMode === "log" ? "log" : "auto"}
+              domain={scale.logDomain ?? [0, "auto"]}
+              ticks={scale.effectiveMode === "log" ? scale.logTicks : undefined}
+              allowDataOverflow={scale.effectiveMode === "log"}
+              interval="preserveStartEnd"
+              tickFormatter={(value) => compactMoney(Number(value), currency, locale)}
+            />
+            <Tooltip
+              formatter={(value) => formatMoney(Number(value), currency, locale)}
+              labelFormatter={(label) => dateLabel(String(label))}
+            />
+            <Legend />
+            {results.map((result, index) => (
+              <Line key={result.name} dataKey={`s${index}_value`} name={result.name} stroke={chartColors[index]} strokeWidth={2.4} dot={false} connectNulls />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </ChartFrame>
+    </div>
   );
 }
 
