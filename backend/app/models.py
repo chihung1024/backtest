@@ -188,11 +188,13 @@ class PerformancePoint(BaseModel):
 
 class PortfolioResult(BaseModel):
     name: str
+    display_name: str
     metrics: dict[str, float | int | str | None]
     series: list[PerformancePoint]
     annual_returns: dict[str, float]
     monthly_returns: list[dict[str, Any]]
     income_by_year: dict[str, float]
+    target_allocation: dict[str, float]
     final_allocation: dict[str, float]
     factor_analysis: dict[str, Any] | None = None
     style_analysis: dict[str, Any] | None = None

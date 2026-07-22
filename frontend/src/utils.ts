@@ -118,7 +118,7 @@ export function downloadResultsCsv(results: PortfolioResult[]): void {
   results.forEach((result) => {
     result.series.forEach((point) => {
       rows.push(
-        [point.date, quote(result.name), point.value, point.return_index, point.drawdown, point.cumulative_income].join(","),
+        [point.date, quote(result.display_name), point.value, point.return_index, point.drawdown, point.cumulative_income].join(","),
       );
     });
   });

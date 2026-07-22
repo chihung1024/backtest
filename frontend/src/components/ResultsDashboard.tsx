@@ -40,6 +40,7 @@ import {
   formatPercent,
 } from "../utils";
 import { resolveGrowthScale, type GrowthScaleMode } from "../chartScale";
+import { resolveDateAxis } from "../dateAxis";
 
 type ResultTab = "overview" | "growth" | "drawdown" | "annual" | "monthly" | "income" | "allocation" | "analytics";
 
@@ -54,7 +55,7 @@ export function ResultsDashboard({
 }) {
   const [activeTab, setActiveTab] = useState<ResultTab>("overview");
   const [selectedPortfolio, setSelectedPortfolio] = useState(0);
-  const [growthScaleMode, setGrowthScaleMode] = useState<GrowthScaleMode>("auto");
+  const [growthScaleMode, setGrowthScaleMode] = useState<GrowthScaleMode>("log");
   const allResults = useMemo(
     () => response.benchmark ? [...response.results, response.benchmark] : response.results,
     [response.benchmark, response.results],
@@ -141,7 +142,9 @@ export function ResultsDashboard({
             onScaleMode={setGrowthScaleMode}
           />
         )}
-        {activeTab === "drawdown" && <DrawdownChart data={chartSeries} results={allResults} />}
+        {activeTab === "drawdown" && (
+          <DrawdownChart data={chartSeries} results={allResults} locale={locale} />
+        )}
         {activeTab === "annual" && <AnnualChart data={annualData} results={allResults} />}
         {activeTab === "monthly" && (
           <MonthlyHeatmap
@@ -214,7 +217,7 @@ function Overview({
           <article className="portfolio-summary" key={result.name} style={{ "--series-color": chartColors[index] } as React.CSSProperties}>
             <div className="portfolio-summary__head">
               <span className="series-swatch" />
-              <h3>{result.name}</h3>
+              <h3 title={result.display_name}>{result.display_name}</h3>
             </div>
             <div className="portfolio-summary__balance">
               <span>{t("finalBalance")}</span>
@@ -235,7 +238,7 @@ function Overview({
       <div className="table-scroll">
         <table className="metrics-table">
           <thead>
-            <tr><th>{t("metric")}</th>{results.map((result) => <th key={result.name}>{result.name}</th>)}</tr>
+            <tr><th>{t("metric")}</th>{results.map((result) => <th key={result.name}>{result.display_name}</th>)}</tr>
           </thead>
           <tbody>
             {metricRows
@@ -275,6 +278,11 @@ function GrowthChart({
     [results],
   );
   const scale = useMemo(() => resolveGrowthScale(values, scaleMode), [scaleMode, values]);
+  const dateAxis = useMemo(
+    () => resolveDateAxis(data.map((row) => String(row.date)), locale),
+    [data, locale],
+  );
+  const selectedScaleMode = scaleMode === "log" && !scale.logAvailable ? "linear" : scaleMode;
   const scaleHint = !scale.logAvailable
     ? t("scaleLogUnavailable")
     : scaleMode === "auto"
@@ -292,8 +300,8 @@ function GrowthChart({
           {(["auto", "linear", "log"] as const).map((mode) => (
             <button
               type="button"
-              className={scaleMode === mode ? "active" : ""}
-              aria-pressed={scaleMode === mode}
+              className={selectedScaleMode === mode ? "active" : ""}
+              aria-pressed={selectedScaleMode === mode}
               disabled={mode === "log" && !scale.logAvailable}
               onClick={() => onScaleMode(mode)}
               key={mode}
@@ -311,7 +319,15 @@ function GrowthChart({
             margin={{ top: 16, right: 18, bottom: 8, left: 8 }}
           >
             <CartesianGrid strokeDasharray="3 5" vertical={false} />
-            <XAxis dataKey="date" tickFormatter={yearTick} minTickGap={36} />
+            <XAxis
+              dataKey="date"
+              ticks={dateAxis.ticks}
+              tickFormatter={dateAxis.formatTick}
+              interval="preserveStartEnd"
+              minTickGap={28}
+              tickMargin={8}
+              height={38}
+            />
             <YAxis
               type="number"
               width={96}
@@ -324,11 +340,11 @@ function GrowthChart({
             />
             <Tooltip
               formatter={(value) => formatMoney(Number(value), currency, locale)}
-              labelFormatter={(label) => dateLabel(String(label))}
+              labelFormatter={(label) => dateLabel(String(label), locale)}
             />
             <Legend />
             {results.map((result, index) => (
-              <Line key={result.name} dataKey={`s${index}_value`} name={result.name} stroke={chartColors[index]} strokeWidth={2.4} dot={false} connectNulls />
+              <Line key={result.name} dataKey={`s${index}_value`} name={result.display_name} stroke={chartColors[index]} strokeWidth={2.4} dot={false} connectNulls />
             ))}
           </LineChart>
         </ResponsiveContainer>
@@ -337,21 +353,33 @@ function GrowthChart({
   );
 }
 
-function DrawdownChart({ data, results }: ChartProps) {
+function DrawdownChart({ data, results, locale }: ChartProps & { locale: string }) {
+  const dateAxis = useMemo(
+    () => resolveDateAxis(data.map((row) => String(row.date)), locale),
+    [data, locale],
+  );
   return (
     <ChartFrame>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 16, right: 18, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 5" vertical={false} />
-          <XAxis dataKey="date" tickFormatter={yearTick} minTickGap={36} />
+          <XAxis
+            dataKey="date"
+            ticks={dateAxis.ticks}
+            tickFormatter={dateAxis.formatTick}
+            interval="preserveStartEnd"
+            minTickGap={28}
+            tickMargin={8}
+            height={38}
+          />
           <YAxis width={64} tickFormatter={(value) => formatPercent(Number(value), 0)} />
           <Tooltip
             formatter={(value) => formatPercent(Number(value))}
-            labelFormatter={(label) => dateLabel(String(label))}
+            labelFormatter={(label) => dateLabel(String(label), locale)}
           />
           <Legend />
           {results.map((result, index) => (
-            <Area key={result.name} type="linear" dataKey={`s${index}_drawdown`} name={result.name} stroke={chartColors[index]} fill={chartColors[index]} fillOpacity={0.08} dot={false} connectNulls />
+            <Area key={result.name} type="linear" dataKey={`s${index}_drawdown`} name={result.display_name} stroke={chartColors[index]} fill={chartColors[index]} fillOpacity={0.08} dot={false} connectNulls />
           ))}
         </AreaChart>
       </ResponsiveContainer>
@@ -370,7 +398,7 @@ function AnnualChart({ data, results }: ChartProps) {
           <Tooltip formatter={(value) => formatPercent(Number(value))} />
           <Legend />
           {results.map((result, index) => (
-            <Bar key={result.name} dataKey={`s${index}`} name={result.name} fill={chartColors[index]} radius={[3, 3, 0, 0]} />
+            <Bar key={result.name} dataKey={`s${index}`} name={result.display_name} fill={chartColors[index]} radius={[3, 3, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -389,7 +417,7 @@ function IncomeChart({ data, results, currency, locale }: ChartProps & { currenc
           <Tooltip formatter={(value) => formatMoney(Number(value), currency, locale)} />
           <Legend />
           {results.map((result, index) => (
-            <Bar key={result.name} dataKey={`s${index}`} name={result.name} fill={chartColors[index]} radius={[3, 3, 0, 0]} />
+            <Bar key={result.name} dataKey={`s${index}`} name={result.display_name} fill={chartColors[index]} radius={[3, 3, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -417,7 +445,7 @@ function MonthlyHeatmap({
       <div className="subtoolbar">
         <label>{t("portfolio")}
           <select value={selected} onChange={(event) => onSelect(Number(event.target.value))}>
-            {results.map((item, index) => <option value={index} key={item.name}>{item.name}</option>)}
+            {results.map((item, index) => <option value={index} key={item.name}>{item.display_name}</option>)}
           </select>
         </label>
       </div>
@@ -458,7 +486,7 @@ function AllocationCharts({ results, t }: { results: PortfolioResult[]; t: Trans
         const data = Object.entries(result.final_allocation).map(([name, value]) => ({ name, value }));
         return (
           <article className="allocation-card" key={result.name}>
-            <h3>{result.name}</h3>
+            <h3 title={result.display_name}>{result.display_name}</h3>
             <div className="allocation-card__chart">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -487,7 +515,7 @@ function AnalyticsPanels({ results, t }: { results: PortfolioResult[]; t: Transl
     <div className="analytics-stack">
       {results.map((result) => (
         <article className="analytics-card" key={result.name}>
-          <h3>{result.name}</h3>
+          <h3 title={result.display_name}>{result.display_name}</h3>
           {result.factor_analysis && (
             <div className="analytics-block">
               <h4>{t("factorRegression")}</h4>
@@ -605,10 +633,8 @@ function compactMoney(value: number, currency: string, locale: string): string {
   return new Intl.NumberFormat(locale, { style: "currency", currency, notation: "compact", maximumFractionDigits: 1 }).format(value);
 }
 
-function yearTick(value: string): string {
-  return value.slice(0, 4);
-}
-
-function dateLabel(value: string): string {
-  return new Intl.DateTimeFormat("zh-TW", { dateStyle: "medium" }).format(new Date(value));
+function dateLabel(value: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(
+    new Date(`${value}T00:00:00Z`),
+  );
 }

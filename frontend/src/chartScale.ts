@@ -24,7 +24,7 @@ export function resolveGrowthScale(
     minimum = Math.min(minimum, value);
     maximum = Math.max(maximum, value);
   });
-  const logAvailable = minimum > 0 && maximum > minimum;
+  const logAvailable = minimum > 0;
   const ratio = logAvailable ? maximum / minimum : 1;
   const useLog = logAvailable && (
     requestedMode === "log" || (requestedMode === "auto" && ratio >= AUTO_LOG_RATIO)
@@ -33,7 +33,10 @@ export function resolveGrowthScale(
   if (!useLog) return linearConfig(logAvailable, ratio);
 
   const logDomain: [number, number] = [niceLogFloor(minimum), niceLogCeil(maximum)];
-  if (logDomain[0] === logDomain[1]) logDomain[1] *= 10;
+  if (logDomain[0] === logDomain[1]) {
+    logDomain[0] = niceLogFloor(minimum / 2);
+    logDomain[1] = niceLogCeil(maximum * 2);
+  }
   return {
     effectiveMode: "log",
     logAvailable,

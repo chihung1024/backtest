@@ -19,6 +19,43 @@ def test_zero_returns_preserve_capital(base_request: BacktestRequest) -> None:
     assert simulation.equity.iloc[-1] == pytest.approx(10_000)
     assert result.metrics["total_return"] == pytest.approx(0.0)
     assert result.metrics["cagr"] == pytest.approx(0.0)
+    assert result.target_allocation == {"AAA": pytest.approx(0.6), "BBB": pytest.approx(0.4)}
+    assert result.display_name == "Balanced · AAA 60% · BBB 40%"
+
+
+def test_result_label_lists_only_three_largest_target_allocations() -> None:
+    request = BacktestRequest.model_validate(
+        {
+            "portfolios": [
+                {
+                    "name": "Diversified",
+                    "assets": [
+                        {"symbol": "SMALL", "weight": 10},
+                        {"symbol": "CORE", "weight": 40},
+                        {"symbol": "BOND", "weight": 30},
+                        {"symbol": "GOLD", "weight": 20},
+                    ],
+                }
+            ],
+            "start_date": "2020-01-01",
+            "end_date": "2020-12-31",
+        }
+    )
+    histories = {symbol: history(symbol, [0.0, 0.0]) for symbol in request.symbols}
+    aligned = align_histories(histories, request.symbols)
+
+    result = to_portfolio_result(
+        simulate_portfolio(request.portfolios[0], aligned, request),
+        request,
+    )
+
+    assert result.display_name == "Diversified · CORE 40% · BOND 30% · GOLD 20%"
+    assert result.target_allocation == {
+        "SMALL": pytest.approx(0.1),
+        "CORE": pytest.approx(0.4),
+        "BOND": pytest.approx(0.3),
+        "GOLD": pytest.approx(0.2),
+    }
 
 
 def test_daily_returns_compound() -> None:

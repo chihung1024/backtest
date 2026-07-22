@@ -7,6 +7,7 @@ import { ResultsDashboard } from "./ResultsDashboard";
 function result(name: string, values: number[]): PortfolioResult {
   return {
     name,
+    display_name: `${name} · VT 100%`,
     metrics: { final_balance: values.at(-1) ?? 0 },
     series: values.map((value, index) => ({
       date: `2020-01-${String(index + 1).padStart(2, "0")}`,
@@ -18,6 +19,7 @@ function result(name: string, values: number[]): PortfolioResult {
     annual_returns: {},
     monthly_returns: [],
     income_by_year: {},
+    target_allocation: { VT: 1 },
     final_allocation: { VT: 1 },
     factor_analysis: null,
     style_analysis: null,
@@ -41,7 +43,7 @@ function response(values: number[]): BacktestResponse {
 }
 
 describe("ResultsDashboard growth scale", () => {
-  it("shows the automatic log decision and lets the user override it", () => {
+  it("uses log scale by default and lets the user override it", () => {
     render(
       <ResultsDashboard
         response={response([1_000_000, 20_000_000])}
@@ -52,8 +54,8 @@ describe("ResultsDashboard growth scale", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "資產成長" }));
 
-    expect(screen.getByRole("button", { name: "自動" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("status")).toHaveTextContent("目前採對數尺度");
+    expect(screen.getByRole("button", { name: "對數" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("對數尺度");
 
     fireEvent.click(screen.getByRole("button", { name: "線性" }));
     expect(screen.getByRole("button", { name: "線性" })).toHaveAttribute("aria-pressed", "true");
@@ -72,6 +74,19 @@ describe("ResultsDashboard growth scale", () => {
     fireEvent.click(screen.getByRole("tab", { name: "資產成長" }));
 
     expect(screen.getByRole("button", { name: "對數" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "線性" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("status")).toHaveTextContent("資料含 0 或負值");
+  });
+
+  it("shows the allocation-aware name throughout the results", () => {
+    render(
+      <ResultsDashboard
+        response={response([1_000_000, 1_100_000])}
+        t={translator("zh-TW")}
+        locale="zh-TW"
+      />,
+    );
+
+    expect(screen.getAllByText("投資組合 1 · VT 100%").length).toBeGreaterThan(1);
   });
 });

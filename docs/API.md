@@ -66,6 +66,11 @@ X-Backtest-Key: your-personal-key
 
 回應頂層 `base_currency` 固定為 `TWD`，所有金額與績效序列均已逐日換算為台幣。
 `assets[].currency` 是 Yahoo 回傳的標的原始報價幣別，讓使用者能稽核換算來源。
+每個 `results[]` 會同時回傳原始 `name`、統一供介面與 CSV 使用的 `display_name`、
+回測設定的 `target_allocation` 與期末漂移後的 `final_allocation`。`display_name` 依
+`target_allocation` 由大到小列出最多三個標的及比例；基準名稱則維持
+`Benchmark · TICKER`，避免重複標示。
+
 `assets` 除了有效日期、原始報價幣別與觀察值數量，也包含企業行動稽核欄位：
 
 | 欄位 | 說明 |

@@ -31,6 +31,13 @@ describe("growth chart scale", () => {
     expect(resolveGrowthScale([100, 200], "log").effectiveMode).toBe("log");
   });
 
+  it("keeps the default log scale for a flat positive series", () => {
+    const config = resolveGrowthScale([100, 100], "log");
+
+    expect(config.effectiveMode).toBe("log");
+    expect(config.logDomain).toEqual([50, 200]);
+  });
+
   it("falls back to linear when zero or negative values make log invalid", () => {
     const zero = resolveGrowthScale([0, 100, 1_000], "log");
     const negative = resolveGrowthScale([-10, 100, 1_000], "auto");

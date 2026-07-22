@@ -45,6 +45,7 @@ class Simulation:
     flows: pd.Series
     income: pd.Series
     final_allocation: dict[str, float]
+    target_allocation: dict[str, float] = field(default_factory=dict)
     transaction_costs: float = 0.0
     borrowing_costs: float = 0.0
     rebalance_count: int = 0
@@ -223,6 +224,9 @@ def simulate_portfolio(
         flows=external_flows,
         income=income_values,
         final_allocation=final_allocation,
+        target_allocation={
+            asset.symbol: float(asset.weight / 100.0) for asset in portfolio.assets
+        },
         transaction_costs=transaction_costs,
         borrowing_costs=borrowing_costs,
         rebalance_count=rebalance_count,
@@ -238,6 +242,7 @@ def to_portfolio_result(
     style_analysis: dict[str, object] | None = None,
     regime_analysis: dict[str, object] | None = None,
     inflation_index: pd.Series | None = None,
+    is_benchmark: bool = False,
 ) -> PortfolioResult:
     metrics = compute_metrics(
         equity=simulation.equity,
@@ -292,8 +297,14 @@ def to_portfolio_result(
         if not income_yearly.empty:
             income_yearly.iloc[0] = simulation.income.resample("YE").last().iloc[0]
 
+    target_allocation = simulation.target_allocation or simulation.final_allocation
     return PortfolioResult(
         name=simulation.name,
+        display_name=_portfolio_display_name(
+            simulation.name,
+            target_allocation,
+            is_benchmark=is_benchmark,
+        ),
         metrics={key: _finite(value) for key, value in metrics.items()},
         series=series,
         annual_returns={str(year): _finite(value) for year, value in yearly.items()},
@@ -304,6 +315,9 @@ def to_portfolio_result(
         income_by_year={
             str(timestamp.year): _finite(value) for timestamp, value in income_yearly.items()
         },
+        target_allocation={
+            key: float(value) for key, value in target_allocation.items()
+        },
         final_allocation={
             key: _finite(value) for key, value in simulation.final_allocation.items()
         },
@@ -311,6 +325,29 @@ def to_portfolio_result(
         style_analysis=style_analysis,
         regime_analysis=regime_analysis,
     )
+
+
+def _portfolio_display_name(
+    name: str,
+    target_allocation: dict[str, float],
+    *,
+    is_benchmark: bool,
+) -> str:
+    if is_benchmark or not target_allocation:
+        return name
+    largest = sorted(
+        target_allocation.items(),
+        key=lambda item: item[1],
+        reverse=True,
+    )[:3]
+    holdings = [f"{symbol} {_format_target_weight(weight)}" for symbol, weight in largest]
+    return " · ".join([name, *holdings])
+
+
+def _format_target_weight(weight: float) -> str:
+    percentage = weight * 100.0
+    value = f"{percentage:.2f}".rstrip("0").rstrip(".")
+    return f"{value}%"
 
 
 def _initial_exposure(

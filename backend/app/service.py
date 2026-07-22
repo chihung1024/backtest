@@ -140,6 +140,7 @@ class BacktestService:
                 benchmark_simulation,
                 benchmark_request,
                 inflation_index=inflation_index,
+                is_benchmark=True,
             )
 
         results = []

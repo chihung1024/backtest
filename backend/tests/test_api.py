@@ -106,7 +106,10 @@ async def test_backtest_endpoint_returns_calculated_response() -> None:
     body = response.json()
     assert body["base_currency"] == "TWD"
     assert body["results"][0]["name"] == "Global"
+    assert body["results"][0]["display_name"] == "Global · VT 100%"
+    assert body["results"][0]["target_allocation"] == {"VT": 1.0}
     assert body["benchmark"]["name"] == "Benchmark · VT"
+    assert body["benchmark"]["display_name"] == "Benchmark · VT"
     assert body["assets"][0]["symbol"] == "VT"
     assert body["assets"][0]["split_events"] == 0
     assert body["assets"][0]["capital_gain_events"] == 0
