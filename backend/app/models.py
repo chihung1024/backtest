@@ -173,6 +173,11 @@ class AssetMetadata(BaseModel):
     first_date: date
     last_date: date
     observations: int
+    dividend_events: int = 0
+    capital_gain_events: int = 0
+    split_events: int = 0
+    repaired_observations: int = 0
+    split_corrections: int = 0
 
 
 class PerformancePoint(BaseModel):

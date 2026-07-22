@@ -169,6 +169,11 @@ export interface BacktestResponse {
     first_date: string;
     last_date: string;
     observations: number;
+    dividend_events: number;
+    capital_gain_events: number;
+    split_events: number;
+    repaired_observations: number;
+    split_corrections: number;
   }>;
   warnings: string[];
 }

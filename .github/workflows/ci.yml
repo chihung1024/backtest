@@ -31,7 +31,7 @@ jobs:
       - name: Lint
         run: ruff check app tests
       - name: Test
-        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=70
+        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
 
   frontend:
     name: Frontend · Node 24

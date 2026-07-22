@@ -44,8 +44,19 @@ class BacktestService:
             request.end_date,
             request.base_currency,
         )
-        aligned = align_histories(histories, request.symbols)
         warnings = list(normalization_warnings)
+        for symbol, history in histories.items():
+            if history.repaired_observations:
+                warnings.append(
+                    f"{symbol}: yfinance repaired {history.repaired_observations} "
+                    "price observation(s) before the backtest"
+                )
+            if history.split_corrections:
+                warnings.append(
+                    f"{symbol}: corrected {history.split_corrections} residual "
+                    "split transition(s) before calculating returns"
+                )
+        aligned = align_histories(histories, request.symbols)
         if aligned.start > request.start_date:
             warnings.append(
                 f"Common start moved to {aligned.start.isoformat()} because of "
@@ -184,6 +195,11 @@ class BacktestService:
                 first_date=histories[symbol].first_date,
                 last_date=histories[symbol].last_date,
                 observations=int(histories[symbol].total_returns.notna().sum()),
+                dividend_events=histories[symbol].dividend_events,
+                capital_gain_events=histories[symbol].capital_gain_events,
+                split_events=histories[symbol].split_events,
+                repaired_observations=histories[symbol].repaired_observations,
+                split_corrections=histories[symbol].split_corrections,
             )
             for symbol in request.symbols
         ]

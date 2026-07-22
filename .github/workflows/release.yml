@@ -32,8 +32,15 @@ jobs:
         shell: bash
         run: |
           VERSION="$(sed -n 's/^__version__ = "\([^\"]*\)"/\1/p' backend/app/__init__.py)"
+          PROJECT_VERSION="$(sed -n '/^\[project\]/,/^\[/s/^version = "\([^\"]*\)"/\1/p' backend/pyproject.toml)"
+          FRONTEND_VERSION="$(sed -n 's/^  "version": "\([^\"]*\)",/\1/p' frontend/package.json | head -1)"
+          LOCK_VERSION="$(sed -n 's/^  "version": "\([^\"]*\)",/\1/p' frontend/package-lock.json | head -1)"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid or missing version: $VERSION" >&2
+            exit 1
+          fi
+          if [[ "$PROJECT_VERSION" != "$VERSION" || "$FRONTEND_VERSION" != "$VERSION" || "$LOCK_VERSION" != "$VERSION" ]]; then
+            echo "Version mismatch: app=$VERSION project=$PROJECT_VERSION frontend=$FRONTEND_VERSION lock=$LOCK_VERSION" >&2
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

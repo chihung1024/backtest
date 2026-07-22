@@ -107,4 +107,6 @@ async def test_backtest_endpoint_returns_calculated_response() -> None:
     assert body["results"][0]["name"] == "Global"
     assert body["benchmark"]["name"] == "Benchmark · VT"
     assert body["assets"][0]["symbol"] == "VT"
+    assert body["assets"][0]["split_events"] == 0
+    assert body["assets"][0]["capital_gain_events"] == 0
     assert body["results"][0]["metrics"]["final_balance"] > 0

@@ -59,6 +59,18 @@ X-Backtest-Key: your-personal-key
 
 每組投資組合權重須合計為 100%，容許 0.05 個百分點的浮點誤差。單次最多三組投資組合、每組二十個資產；伺服器另限制所有唯一代碼合計不超過 64 個。
 
+回應的 `assets` 除了有效日期、幣別與觀察值數量，也包含企業行動稽核欄位：
+
+| 欄位 | 說明 |
+|---|---|
+| `dividend_events` | Yahoo 普通／特別現金股利事件數 |
+| `capital_gain_events` | 基金資本利得配發事件數 |
+| `split_events` | 拆股與反向拆股事件數 |
+| `repaired_observations` | yfinance `repair=True` 修復的價格列數 |
+| `split_corrections` | 本站偵測並修正的殘留拆股跳變數 |
+
+若 `repaired_observations` 或 `split_corrections` 大於零，`warnings` 也會留下可見提醒。
+
 ## 錯誤格式
 
 - `401`：存取金鑰錯誤。
