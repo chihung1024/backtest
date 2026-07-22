@@ -124,7 +124,7 @@ const zh = {
   noResults: "設定投資組合後執行回測，這裡會呈現完整績效與風險分析。",
   methodology: "方法與限制",
   methodologyText:
-    "假設可買賣零股；報酬採交易日計算。調整後價格代表股息再投入，跨幣別資產會先換算為基準幣別。結果不含稅負與滑價，除非另行設定交易成本。",
+    "假設可買賣零股；拆股與反向拆股不改變資產價值。總報酬採 Yahoo 調整後價格，現金股利與資本利得配發以加法拆分，跨幣別後仍維持總報酬＝價格報酬＋配發收益。結果不含稅負與滑價。",
   legal: "資料僅供個人研究與教育，不構成投資建議。Yahoo Finance 資料仍受其使用條款限制。",
   language: "EN",
   lightMode: "淺色模式",
@@ -271,7 +271,7 @@ const en: Record<MessageKey, string> = {
   noResults: "Configure a portfolio and run a backtest to see performance and risk analysis.",
   methodology: "Methodology & limitations",
   methodologyText:
-    "Fractional shares are assumed and returns use trading days. Adjusted prices represent reinvested dividends, and foreign assets are converted into the base currency. Taxes and slippage are excluded unless transaction costs are set.",
+    "Fractional shares are assumed, so splits and reverse splits do not change portfolio value. Total returns use Yahoo adjusted prices; cash dividends and capital-gain distributions are decomposed additively, including after FX conversion. Taxes and slippage are excluded.",
   legal: "For personal research and education only. Not investment advice. Yahoo Finance terms still apply.",
   language: "中",
   lightMode: "Light mode",

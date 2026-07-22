@@ -1,7 +1,8 @@
 # 版本封存與還原
 
-本專案以 `backend/app/__init__.py` 的 `__version__` 作為唯一版本來源，前端
-`package.json` 應維持相同版本。採用語意化版本：
+本專案以 `backend/app/__init__.py` 的 `__version__` 作為主要版本來源；
+`backend/pyproject.toml`、前端 `package.json` 與 `package-lock.json` 必須維持
+相同版本，Release workflow 會在封存前強制比對。採用語意化版本：
 
 - 修正錯誤：增加 patch，例如 `0.1.0` → `0.1.1`。
 - 向下相容的新功能：增加 minor，例如 `0.1.1` → `0.2.0`。

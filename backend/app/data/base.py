@@ -16,6 +16,11 @@ class AssetHistory:
     price_returns: pd.Series
     dividend_returns: pd.Series
     dividends: pd.Series
+    dividend_events: int = 0
+    capital_gain_events: int = 0
+    split_events: int = 0
+    repaired_observations: int = 0
+    split_corrections: int = 0
 
     @property
     def first_date(self) -> date:

@@ -118,6 +118,36 @@ def test_dividends_can_be_held_as_cash() -> None:
     assert all(point.cumulative_income == 0 for point in hidden_result.series)
 
 
+def test_reinvested_and_cash_distribution_match_on_event_day() -> None:
+    histories = {
+        "AAA": history(
+            "AAA",
+            [0.0, 0.01],
+            price_returns=[0.0, -0.01],
+            dividend_returns=[0.0, 0.02],
+        )
+    }
+    base = {
+        "portfolios": [
+            {"name": "Distribution", "assets": [{"symbol": "AAA", "weight": 100}]}
+        ],
+        "start_date": "2020-01-01",
+        "end_date": "2020-12-31",
+        "initial_amount": 1_000,
+        "rebalancing": {"frequency": "none"},
+    }
+    reinvest = BacktestRequest.model_validate({**base, "reinvest_dividends": True})
+    cash = BacktestRequest.model_validate({**base, "reinvest_dividends": False})
+    aligned = align_histories(histories, ["AAA"])
+
+    reinvested = simulate_portfolio(reinvest.portfolios[0], aligned, reinvest)
+    held = simulate_portfolio(cash.portfolios[0], aligned, cash)
+
+    assert reinvested.equity.iloc[-1] == pytest.approx(1_010)
+    assert held.equity.iloc[-1] == pytest.approx(1_010)
+    assert held.income.iloc[-1] == pytest.approx(20)
+
+
 def test_rebalance_restores_target_weights(base_request: BacktestRequest) -> None:
     index = pd.bdate_range("2020-01-01", "2021-01-04")
     a = [0.0] * len(index)
