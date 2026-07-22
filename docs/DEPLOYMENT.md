@@ -42,6 +42,7 @@ gcloud services enable \
   run.googleapis.com \
   cloudbuild.googleapis.com \
   artifactregistry.googleapis.com \
+  cloudbilling.googleapis.com \
   billingbudgets.googleapis.com \
   cloudresourcemanager.googleapis.com \
   iam.googleapis.com \
@@ -239,8 +240,10 @@ gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT" \
 ### OIDC 顯示 403
 
 確認 workflow 由 `chihung1024/backtest` 的 `main` 分支執行、WIF provider 使用專案
-編號而非專案 ID，並等待 IAM 傳播至少五分鐘。OIDC 條件刻意使用不可重新命名的
-repository／owner 數字 ID，避免同名 repository 被冒用。
+編號而非專案 ID，且 `cloudbilling.googleapis.com` 與
+`billingbudgets.googleapis.com` 均已啟用。帳務帳戶需把
+`roles/billing.costsManager` 授予部署帳號，變更後等待 IAM 傳播至少五分鐘。
+OIDC 條件刻意使用不可重新命名的 repository／owner 數字 ID，避免同名 repository 被冒用。
 
 ### Pages 可開啟但顯示未連線
 
