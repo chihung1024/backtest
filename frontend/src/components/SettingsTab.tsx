@@ -22,6 +22,7 @@ export function SettingsTab({
         <div className="form-grid">
           <Field label={t("startDate")}>
             <input
+              className="date-input"
               type="date"
               value={model.startDate}
               onChange={(event) => patch({ startDate: event.target.value })}
@@ -29,6 +30,7 @@ export function SettingsTab({
           </Field>
           <Field label={t("endDate")}>
             <input
+              className="date-input"
               type="date"
               value={model.endDate}
               max={new Date().toISOString().slice(0, 10)}

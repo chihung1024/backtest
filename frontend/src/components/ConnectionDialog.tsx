@@ -1,5 +1,5 @@
 import { CheckCircle2, KeyRound, LoaderCircle, Server, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { checkHealth } from "../api";
 import type { Translator } from "../i18n";
 import type { ApiConnection } from "../types";
@@ -37,6 +37,12 @@ function ConnectionDialogContent({
   const [draft, setDraft] = useState(connection);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<"idle" | "ok" | "error">("idle");
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
 
   async function test() {
     setTesting(true);
@@ -92,7 +98,7 @@ function ConnectionDialogContent({
           {status === "error" && <div className="inline-error">{t("disconnected")}</div>}
         </div>
         <div className="modal__footer">
-          <button type="button" className="button button--ghost" onClick={test} disabled={testing}>
+          <button type="button" className="button button--ghost modal__test-action" onClick={test} disabled={testing}>
             {testing && <LoaderCircle className="spin" size={16} />}{t("testConnection")}
           </button>
           <div className="modal__footer-spacer" />

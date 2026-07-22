@@ -19,7 +19,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Line,
   LineChart,
   Pie,
@@ -84,12 +83,10 @@ export function ResultsDashboard({
         <div>
           <span className="eyebrow">Portfolio performance</span>
           <h2 id="results-title">{t("results")}</h2>
-          <p>
-            {t("period")}：{response.effective_start} → {response.effective_end}
-            <span className="dot-separator">•</span>
-            {t("dataAsOf")}：{response.data_as_of}
-            <span className="dot-separator">•</span>
-            {t("valuationBasis")}：{response.base_currency}
+          <p className="results-meta">
+            <span>{t("period")}：{response.effective_start} → {response.effective_end}</span>
+            <span>{t("dataAsOf")}：{response.data_as_of}</span>
+            <span>{t("valuationBasis")}：{response.base_currency}</span>
           </p>
         </div>
         <div className="results-actions">
@@ -311,7 +308,7 @@ function GrowthChart({
           ))}
         </div>
       </div>
-      <ChartFrame>
+      <ChartFrame results={results}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             key={scale.effectiveMode}
@@ -342,7 +339,6 @@ function GrowthChart({
               formatter={(value) => formatMoney(Number(value), currency, locale)}
               labelFormatter={(label) => dateLabel(String(label), locale)}
             />
-            <Legend />
             {results.map((result, index) => (
               <Line key={result.name} dataKey={`s${index}_value`} name={result.display_name} stroke={chartColors[index]} strokeWidth={2.4} dot={false} connectNulls />
             ))}
@@ -359,7 +355,7 @@ function DrawdownChart({ data, results, locale }: ChartProps & { locale: string 
     [data, locale],
   );
   return (
-    <ChartFrame>
+    <ChartFrame results={results}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 16, right: 18, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 5" vertical={false} />
@@ -377,7 +373,6 @@ function DrawdownChart({ data, results, locale }: ChartProps & { locale: string 
             formatter={(value) => formatPercent(Number(value))}
             labelFormatter={(label) => dateLabel(String(label), locale)}
           />
-          <Legend />
           {results.map((result, index) => (
             <Area key={result.name} type="linear" dataKey={`s${index}_drawdown`} name={result.display_name} stroke={chartColors[index]} fill={chartColors[index]} fillOpacity={0.08} dot={false} connectNulls />
           ))}
@@ -389,14 +384,13 @@ function DrawdownChart({ data, results, locale }: ChartProps & { locale: string 
 
 function AnnualChart({ data, results }: ChartProps) {
   return (
-    <ChartFrame>
+    <ChartFrame results={results}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 16, right: 18, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 5" vertical={false} />
           <XAxis dataKey="year" />
           <YAxis width={64} tickFormatter={(value) => formatPercent(Number(value), 0)} />
           <Tooltip formatter={(value) => formatPercent(Number(value))} />
-          <Legend />
           {results.map((result, index) => (
             <Bar key={result.name} dataKey={`s${index}`} name={result.display_name} fill={chartColors[index]} radius={[3, 3, 0, 0]} />
           ))}
@@ -408,14 +402,13 @@ function AnnualChart({ data, results }: ChartProps) {
 
 function IncomeChart({ data, results, currency, locale }: ChartProps & { currency: string; locale: string }) {
   return (
-    <ChartFrame>
+    <ChartFrame results={results}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 16, right: 18, bottom: 8, left: 8 }}>
           <CartesianGrid strokeDasharray="3 5" vertical={false} />
           <XAxis dataKey="year" />
           <YAxis width={84} tickFormatter={(value) => compactMoney(Number(value), currency, locale)} />
           <Tooltip formatter={(value) => formatMoney(Number(value), currency, locale)} />
-          <Legend />
           {results.map((result, index) => (
             <Bar key={result.name} dataKey={`s${index}`} name={result.display_name} fill={chartColors[index]} radius={[3, 3, 0, 0]} />
           ))}
@@ -500,7 +493,11 @@ function AllocationCharts({ results, t }: { results: PortfolioResult[]; t: Trans
             </div>
             <div className="allocation-legend">
               {data.map((entry, index) => (
-                <div key={entry.name}><span style={{ background: chartColors[(index + resultIndex) % chartColors.length] }} />{entry.name}<strong>{formatPercent(entry.value)}</strong></div>
+                <div key={entry.name}>
+                  <span className="allocation-legend__swatch" style={{ background: chartColors[(index + resultIndex) % chartColors.length] }} />
+                  <span className="allocation-legend__name">{entry.name}</span>
+                  <strong>{formatPercent(entry.value)}</strong>
+                </div>
               ))}
             </div>
           </article>
@@ -577,8 +574,20 @@ function ExposureBar({ name, value, percent = false }: { name: string; value: nu
   );
 }
 
-function ChartFrame({ children }: { children: React.ReactNode }) {
-  return <div className="chart-frame">{children}</div>;
+function ChartFrame({ children, results }: { children: React.ReactNode; results: PortfolioResult[] }) {
+  return (
+    <div className="chart-block">
+      <div className="chart-frame">{children}</div>
+      <ul className="chart-legend">
+        {results.map((result, index) => (
+          <li key={result.name} title={result.display_name}>
+            <span className="chart-legend__swatch" style={{ "--series-color": chartColors[index] } as React.CSSProperties} />
+            <span className="chart-legend__label">{result.display_name}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 interface ChartProps {

@@ -78,6 +78,21 @@ describe("ResultsDashboard growth scale", () => {
     expect(screen.getByRole("status")).toHaveTextContent("資料含 0 或負值");
   });
 
+  it("keeps long series labels outside the fixed chart frame", () => {
+    const { container } = render(
+      <ResultsDashboard
+        response={response([1_000_000, 1_100_000])}
+        t={translator("zh-TW")}
+        locale="zh-TW"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "資產成長" }));
+
+    expect(container.querySelector(".chart-legend")).toHaveTextContent("投資組合 1 · VT 100%");
+    expect(container.querySelector(".chart-frame .chart-legend")).not.toBeInTheDocument();
+  });
+
   it("shows the allocation-aware name throughout the results", () => {
     render(
       <ResultsDashboard
