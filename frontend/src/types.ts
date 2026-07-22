@@ -6,11 +6,12 @@ export type CashflowType = "none" | "fixed" | "percent";
 export type LeverageType = "none" | "fixed_ratio" | "fixed_debt";
 export type RegimeType = "none" | "market" | "volatility" | "inflation" | "business_cycle";
 export type OutputFrequency = "daily" | "weekly" | "monthly";
+export type WeightValue = number | "";
 
 export interface AssetRow {
   id: string;
   symbol: string;
-  weights: number[];
+  weights: WeightValue[];
 }
 
 export interface BacktestFormState {

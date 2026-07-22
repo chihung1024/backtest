@@ -58,3 +58,13 @@ def test_duplicate_symbols_are_rejected() -> None:
 def test_future_end_date_is_rejected() -> None:
     with pytest.raises(ValidationError, match="future"):
         BacktestRequest.model_validate(_minimal_request(end_date=date(2099, 1, 1)))
+
+
+def test_request_accepts_five_portfolios_but_rejects_six() -> None:
+    portfolio = {"name": "Model", "assets": [{"symbol": "VTI", "weight": 100}]}
+
+    request = BacktestRequest.model_validate(_minimal_request(portfolios=[portfolio] * 5))
+    assert len(request.portfolios) == 5
+
+    with pytest.raises(ValidationError, match="at most 5"):
+        BacktestRequest.model_validate(_minimal_request(portfolios=[portfolio] * 6))
