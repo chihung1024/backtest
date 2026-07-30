@@ -16,7 +16,20 @@ def test_explicit_split_repairs_only_the_unadjusted_scale() -> None:
 
     assert result.close_gross.iloc[1] == pytest.approx(1.04)
     assert result.adjusted_gross.iloc[1] == pytest.approx(1.04)
+    assert result.distribution_multipliers.iloc[1] == pytest.approx(4.0)
     assert result.corrections.iloc[1]
+
+
+def test_already_adjusted_close_does_not_rescale_distributions() -> None:
+    index = pd.bdate_range("2020-01-01", periods=3)
+    result = reconcile_corporate_actions(
+        close=pd.Series([100.0, 102.0, 104.0], index=index),
+        adjusted=pd.Series([100.0, 102.0, 104.0], index=index),
+        splits=pd.Series([0.0, 4.0, 0.0], index=index),
+    )
+
+    assert result.close_gross.iloc[1] == pytest.approx(1.02)
+    assert result.distribution_multipliers.iloc[1] == pytest.approx(1.0)
 
 
 def test_adjustment_factor_recovers_an_omitted_split_event() -> None:
@@ -30,6 +43,7 @@ def test_adjustment_factor_recovers_an_omitted_split_event() -> None:
     assert result.splits.iloc[1] == pytest.approx(4.0)
     assert result.close_gross.iloc[1] == pytest.approx(1.04)
     assert result.adjusted_gross.iloc[1] == pytest.approx(1.04)
+    assert result.distribution_multipliers.iloc[1] == pytest.approx(4.0)
 
 
 def test_suspension_boundary_recovers_when_both_price_series_are_unadjusted() -> None:
@@ -45,6 +59,18 @@ def test_suspension_boundary_recovers_when_both_price_series_are_unadjusted() ->
     assert result.splits.iloc[2] == pytest.approx(7.0)
     assert result.close_gross.iloc[2] == pytest.approx(14.7 / 102.0 * 7.0)
     assert result.adjusted_gross.iloc[2] == pytest.approx(14.7 / 102.0 * 7.0)
+
+
+def test_weekend_or_short_holiday_is_not_treated_as_a_suspension() -> None:
+    index = pd.DatetimeIndex(["2020-01-03", "2020-01-07", "2020-01-08"])
+    result = reconcile_corporate_actions(
+        close=pd.Series([100.0, 50.0, 52.0], index=index),
+        adjusted=pd.Series([100.0, 50.0, 52.0], index=index),
+        splits=pd.Series(0.0, index=index),
+    )
+
+    assert result.splits.eq(0.0).all()
+    assert result.close_gross.iloc[1] == pytest.approx(0.5)
 
 
 def test_suspension_boundary_supports_reverse_splits() -> None:

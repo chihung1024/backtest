@@ -198,6 +198,24 @@ def test_cash_distributions_use_additive_decomposition_without_clipping() -> Non
     assert result.capital_gain_events == 1
 
 
+def test_split_day_distribution_uses_post_action_share_count() -> None:
+    frame = _frame(
+        close=[100.0, 26.0],
+        adjusted=[100.0, 108.0],
+        dividends=[0.0, 1.0],
+        splits=[0.0, 4.0],
+    )
+
+    result = _history_from_frame(
+        "CASH", frame, frame.index[0].date(), frame.index[-1].date(), currency="USD"
+    )
+
+    assert result is not None
+    assert result.price_returns.iloc[1] == pytest.approx(0.04)
+    assert result.dividend_returns.iloc[1] == pytest.approx(0.04)
+    assert result.total_returns.iloc[1] == pytest.approx(0.08)
+
+
 def test_close_and_distribution_reconstruct_total_return_when_adjusted_is_missing() -> None:
     frame = _frame(close=[100.0, 99.0], dividends=[0.0, 2.0])
     frame = frame.drop(columns="Adj Close")

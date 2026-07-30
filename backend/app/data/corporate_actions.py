@@ -11,7 +11,7 @@ _MAX_SCALE_RATIO = 100.0
 _EXACT_RATIO_TOLERANCE = math.log(1.035)
 _INFERRED_RETURN_LIMIT = math.log(1.35)
 _MINIMUM_IMPROVEMENT = math.log(1.20)
-_SUSPENSION_GAP_DAYS = 4
+_MIN_MISSING_BUSINESS_DAYS = 3
 _COMPLEXITY_PENALTY = 0.0025
 
 
@@ -20,6 +20,7 @@ class CorporateActionReconciliation:
     close_gross: pd.Series
     adjusted_gross: pd.Series
     splits: pd.Series
+    distribution_multipliers: pd.Series
     corrections: pd.Series
 
 
@@ -30,7 +31,7 @@ def reconcile_corporate_actions(
     splits: pd.Series,
     distributions: pd.Series | None = None,
 ) -> CorporateActionReconciliation:
-    """Reconcile explicit and omitted split transitions without symbol-specific rules.
+    """Reconcile explicit and omitted share-scale transitions without symbol rules.
 
     The resolver uses three independent representations of the same economic path:
 
@@ -40,8 +41,10 @@ def reconcile_corporate_actions(
     3. a conservative suspension-boundary fallback for feeds where both the split event
        and adjusted-price correction are missing.
 
-    A ratio is applied only when it removes a scale discontinuity. Genuine large returns
-    on ordinary consecutive trading days remain untouched.
+    A ratio is applied only when it removes a price-unit discontinuity. Genuine large
+    returns on ordinary consecutive trading days remain untouched. The returned
+    distribution multiplier records whether the prior close was expressed in pre-action
+    units, so cash paid per current unit is converted to the same economic basis exactly.
     """
     index = pd.DatetimeIndex(close.index)
     native_close = _positive_series(close, index)
@@ -64,8 +67,8 @@ def reconcile_corporate_actions(
         [np.inf, -np.inf], np.nan
     )
     factor_change = adjustment_factor / adjustment_factor.shift(1)
-    # Yahoo-style adjusted prices satisfy:
-    # factor_change = split_ratio * (1 + cash_distribution / ex_date_close).
+    # With distributions quoted per post-action unit, adjusted prices satisfy:
+    # factor_change = share_multiplier * (1 + distribution / ex-date close).
     cash_factor = (1.0 + cash_distributions / native_close).replace(
         [np.inf, -np.inf], np.nan
     )
@@ -83,15 +86,18 @@ def reconcile_corporate_actions(
         resolved_splits.iloc[position] = ratio
         trusted.iloc[position] = True
 
-    # Some exchanges suspend an ETF while certificates are replaced. If the upstream feed
-    # omits both the action and the adjustment, the resumption row contains the scale change
-    # in both Close and Adj Close. Restrict this inference to a multi-day suspension boundary,
-    # require both price representations to agree, and require a simple share-count ratio.
+    # Some exchanges suspend a security while units are replaced. If the upstream feed
+    # omits both the event and the adjustment, the resumption row contains the scale change
+    # in both Close and Adj Close. Calendar weekends are not evidence of suspension, so this
+    # fallback requires at least three missing weekdays in addition to price agreement and a
+    # simple share-count ratio.
     for position in range(1, len(index)):
         ratio_value = float(resolved_splits.iloc[position])
         if ratio_value > 0.0 and not np.isclose(ratio_value, 1.0):
             continue
-        if (index[position] - index[position - 1]).days < _SUSPENSION_GAP_DAYS:
+        if _missing_business_days(index[position - 1], index[position]) < (
+            _MIN_MISSING_BUSINESS_DAYS
+        ):
             continue
 
         previous_close = float(native_close.iloc[position - 1])
@@ -113,32 +119,35 @@ def reconcile_corporate_actions(
             continue
         resolved_splits.iloc[position] = ratio
 
+    distribution_multipliers = pd.Series(1.0, index=index, dtype=float)
     corrections = pd.Series(False, index=index, dtype=bool)
     for position in range(1, len(index)):
         ratio = float(resolved_splits.iloc[position])
         if not np.isfinite(ratio) or ratio <= 0.0 or np.isclose(ratio, 1.0):
             continue
-        changed = _apply_ratio(
+        close_changed = _apply_ratio(
             close_gross,
             position,
             ratio,
             trusted=bool(trusted.iloc[position]),
         )
-        changed = (
-            _apply_ratio(
-                adjusted_gross,
-                position,
-                ratio,
-                trusted=bool(trusted.iloc[position]),
-            )
-            or changed
+        if close_changed:
+            # Previous close was per pre-action unit while distributions are per current
+            # unit. One previous unit owns `ratio` current units after the action.
+            distribution_multipliers.iloc[position] = ratio
+        adjusted_changed = _apply_ratio(
+            adjusted_gross,
+            position,
+            ratio,
+            trusted=bool(trusted.iloc[position]),
         )
-        corrections.iloc[position] = changed
+        corrections.iloc[position] = close_changed or adjusted_changed
 
     return CorporateActionReconciliation(
         close_gross=close_gross,
         adjusted_gross=adjusted_gross,
         splits=resolved_splits,
+        distribution_multipliers=distribution_multipliers,
         corrections=corrections,
     )
 
@@ -194,6 +203,12 @@ def _best_simple_ratio(target: float, *, exact: bool) -> float | None:
     if exact and error > _EXACT_RATIO_TOLERANCE:
         return None
     return ratio
+
+
+def _missing_business_days(previous: pd.Timestamp, current: pd.Timestamp) -> int:
+    start = (previous.normalize() + pd.Timedelta(days=1)).date()
+    end = current.normalize().date()
+    return int(np.busday_count(start, end))
 
 
 def _valid_gross(value: float) -> bool:
