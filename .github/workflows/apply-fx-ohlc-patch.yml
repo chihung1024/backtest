@@ -5,6 +5,7 @@ on:
     branches: [fix/fx-ohlc-reconciliation]
     paths:
       - "scripts/apply_fx_ohlc_patch.py"
+      - ".github/workflows/apply-fx-ohlc-patch.yml"
 
 permissions:
   contents: write
