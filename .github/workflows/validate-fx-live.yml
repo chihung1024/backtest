@@ -1,0 +1,46 @@
+name: Validate live FX history
+
+on:
+  push:
+    branches: [fix/fx-ohlc-reconciliation]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - name: Install backend
+        working-directory: backend
+        run: python -m pip install -e .
+      - name: Validate USD to TWD FX path
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from datetime import date
+          import numpy as np
+          import pandas as pd
+          from app.data.yfinance_provider import YFinanceProvider
+
+          levels = YFinanceProvider()._download_fx_levels(
+              "USD", "TWD", date(2007, 1, 1), date(2026, 7, 30)
+          )
+          gross = levels / levels.shift(1)
+          material = ((gross < (1 / 1.8)) | (gross > 1.8)).fillna(False)
+          print(f"observations={len(levels)} material_transitions={int(material.sum())}")
+          for day in ("2011-10-25", "2011-10-26", "2014-12-31", "2015-01-01"):
+              timestamp = pd.Timestamp(day)
+              print(day, "level", levels.get(timestamp), "gross", gross.get(timestamp))
+          if material.any():
+              print(pd.DataFrame({"level": levels, "gross": gross}).loc[material])
+              raise SystemExit("material FX discontinuities remain after reconciliation")
+          if not np.isfinite(levels.to_numpy()).all() or (levels <= 0).any():
+              raise SystemExit("FX levels contain non-positive or non-finite values")
+          PY
