@@ -22,13 +22,16 @@ jobs:
       - name: Install backend
         working-directory: backend
         run: python -m pip install -e .
-      - name: Inspect isolated Yahoo price pulses
+      - name: Inspect Yahoo discontinuities and normalized returns
         working-directory: backend
         run: |
           python - <<'PY'
-          import math
+          from datetime import date
+
           import pandas as pd
           import yfinance as yf
+
+          from app.data.yfinance_provider import _history_from_frame
 
           symbol = "USD"
           raw = yf.download(
@@ -50,47 +53,56 @@ jobs:
                   raw = raw.xs(symbol, axis=1, level=1)
           raw.index = pd.to_datetime(raw.index).tz_localize(None)
           close = pd.to_numeric(raw["Close"], errors="coerce")
-          gross = close / close.shift(1)
-          next_gross = gross.shift(-1)
-          bridge = close.shift(-1) / close.shift(1)
-          log_gross = gross.map(
-              lambda value: abs(math.log(value))
-              if pd.notna(value) and value > 0
-              else 0.0
+          adjusted = pd.to_numeric(raw.get("Adj Close", raw["Close"]), errors="coerce")
+          close_gross = close / close.shift(1)
+          adjusted_gross = adjusted / adjusted.shift(1)
+          history = _history_from_frame(
+              symbol,
+              raw,
+              date(2007, 1, 1),
+              date(2026, 7, 30),
+              currency="USD",
           )
-          log_next = next_gross.map(
-              lambda value: abs(math.log(value))
-              if pd.notna(value) and value > 0
-              else 0.0
+          if history is None:
+              raise RuntimeError("normalization returned no history")
+
+          raw_mask = (
+              (close_gross < 0.60)
+              | (close_gross > 1.80)
+              | (adjusted_gross < 0.60)
+              | (adjusted_gross > 1.80)
           )
-          log_bridge = bridge.map(
-              lambda value: abs(math.log(value))
-              if pd.notna(value) and value > 0
-              else 999.0
+          normalized_mask = (
+              (history.total_returns < -0.40)
+              | (history.total_returns > 0.80)
+              | (history.price_returns < -0.40)
+              | (history.price_returns > 0.80)
+              | (history.dividend_returns > 0.40)
           )
-          pulse = (
-              (gross > 0)
-              & (next_gross > 0)
-              & (log_gross > math.log(3))
-              & (log_next > math.log(3))
-              & (log_bridge < math.log(1.5))
+          candidates = raw.index[raw_mask.fillna(False)].union(
+              history.total_returns.index[normalized_mask.fillna(False)]
           )
-          candidates = raw.loc[pulse].index
-          print(f"rows={len(raw)} candidates={len(candidates)}")
+          print(
+              f"rows={len(raw)} candidates={len(candidates)} "
+              f"split_events={history.split_events} "
+              f"corrections={history.split_corrections}"
+          )
           requested = [
               "Open", "High", "Low", "Close", "Adj Close", "Volume",
               "Dividends", "Stock Splits", "Capital Gains", "Repaired?",
           ]
           columns = [column for column in requested if column in raw.columns]
           for timestamp in candidates:
-              position = raw.index.get_loc(timestamp)
+              position = raw.index.get_indexer([timestamp], method="nearest")[0]
               start = max(0, position - 3)
-              end = min(len(raw), position + 4)
+              end = min(len(raw), position + 5)
               print("\nCANDIDATE", timestamp.date())
               print(raw.iloc[start:end][columns].to_string())
               print(
-                  "gross", gross.iloc[position],
-                  "next_gross", next_gross.iloc[position],
-                  "bridge", bridge.iloc[position],
+                  "raw_close_gross", close_gross.get(timestamp),
+                  "raw_adjusted_gross", adjusted_gross.get(timestamp),
+                  "normalized_total", history.total_returns.get(timestamp),
+                  "normalized_price", history.price_returns.get(timestamp),
+                  "normalized_distribution", history.dividend_returns.get(timestamp),
               )
           PY
