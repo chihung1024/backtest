@@ -1,11 +1,8 @@
 name: Apply universal corporate action reconciliation
 
 on:
-  push:
-    branches:
-      - agent/universal-corporate-action-reconciliation
-    paths:
-      - .github/workflows/apply-universal-corporate-action-fix.yml
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
