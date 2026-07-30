@@ -12,6 +12,7 @@ import yfinance as yf
 from cachetools import TTLCache
 
 from app.data.base import AssetHistory
+from app.data.corporate_actions import reconcile_corporate_actions
 
 logger = logging.getLogger(__name__)
 
@@ -410,10 +411,16 @@ def _history_from_frame(
         capital_gains = capital_gains.clip(lower=0.0)
     distributions = dividends + capital_gains
 
-    close_gross, close_split_fixes = _correct_residual_splits(close / close.shift(1), splits)
-    adjusted_gross, adjusted_split_fixes = _correct_residual_splits(
-        adjusted / adjusted.shift(1), splits
+    reconciliation = reconcile_corporate_actions(
+        close=close,
+        adjusted=adjusted,
+        splits=splits,
+        distributions=distributions,
     )
+    close_gross = reconciliation.close_gross
+    adjusted_gross = reconciliation.adjusted_gross
+    splits = reconciliation.splits
+    split_fixes = reconciliation.corrections
     distribution_returns = (distributions / close.shift(1)).replace(
         [np.inf, -np.inf], np.nan
     ).fillna(0.0)
@@ -457,9 +464,7 @@ def _history_from_frame(
         ((splits.loc[window_index] > 0) & ~np.isclose(splits.loc[window_index], 1.0)).sum()
     )
     split_corrections = int(
-        (close_split_fixes | adjusted_split_fixes)
-        .reindex(window_index, fill_value=False)
-        .sum()
+        split_fixes.reindex(window_index, fill_value=False).sum()
     )
 
     return AssetHistory(

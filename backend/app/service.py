@@ -44,18 +44,9 @@ class BacktestService:
             request.end_date,
             request.base_currency,
         )
+        # Successful market-data reconciliation is audit metadata, not a user-facing
+        # error condition. Results continue normally after deterministic repair.
         warnings = list(normalization_warnings)
-        for symbol, history in histories.items():
-            if history.repaired_observations:
-                warnings.append(
-                    f"{symbol}: yfinance repaired {history.repaired_observations} "
-                    "price observation(s) before the backtest"
-                )
-            if history.split_corrections:
-                warnings.append(
-                    f"{symbol}: corrected {history.split_corrections} residual "
-                    "split transition(s) before calculating returns"
-                )
         aligned = align_histories(histories, request.symbols)
         if aligned.start > request.start_date:
             warnings.append(

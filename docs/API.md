@@ -81,7 +81,7 @@ X-Backtest-Key: your-personal-key
 | `repaired_observations` | yfinance `repair=True` 修復的價格列數 |
 | `split_corrections` | 本站偵測並修正的殘留拆股跳變數 |
 
-若 `repaired_observations` 或 `split_corrections` 大於零，`warnings` 也會留下可見提醒。
+這些欄位屬於資料處理稽核；已自動完成的修復不會被呈現為錯誤，也不會中斷回測。
 
 ## 錯誤格式
 

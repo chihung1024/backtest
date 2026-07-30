@@ -106,5 +106,5 @@ def test_service_reports_corporate_action_audit_metadata() -> None:
     assert metadata.split_events == 2
     assert metadata.repaired_observations == 3
     assert metadata.split_corrections == 1
-    assert any("yfinance repaired 3" in warning for warning in response.warnings)
-    assert any("residual split" in warning for warning in response.warnings)
+    assert not any("yfinance repaired" in warning for warning in response.warnings)
+    assert not any("split transition" in warning for warning in response.warnings)
