@@ -13,6 +13,7 @@ from cachetools import TTLCache
 
 from app.data.base import AssetHistory
 from app.data.corporate_actions import reconcile_corporate_actions
+from app.data.price_quality import reconcile_ohlc_levels
 
 logger = logging.getLogger(__name__)
 
@@ -333,31 +334,59 @@ class YFinanceProvider:
         self, source_currency: str, target_currency: str, start: date, end: date
     ) -> pd.Series:
         candidates = _fx_candidates(source_currency, target_currency)
-        for ticker, invert in candidates:
+        usable: list[tuple[tuple[int, int, int, int], str, pd.Series]] = []
+        for priority, (ticker, invert) in enumerate(candidates):
             try:
                 raw = yf.download(
                     ticker,
                     start=(start - timedelta(days=_FX_LOOKBACK_DAYS)).isoformat(),
                     end=(end + timedelta(days=1)).isoformat(),
                     auto_adjust=True,
+                    actions=False,
+                    repair=False,
+                    keepna=True,
                     progress=False,
                     threads=False,
                     timeout=20,
                 )
                 if raw.empty:
                     continue
-                close = raw["Close"]
-                if isinstance(close, pd.DataFrame):
-                    close = close.iloc[:, 0]
-                close.index = pd.to_datetime(close.index).tz_localize(None)
-                series = close.astype(float)
-                if invert:
-                    series = 1.0 / series
-                series = series.replace([np.inf, -np.inf], np.nan).dropna()
-                if series.notna().sum() > 1:
-                    return series
+                frame = _ticker_frame(raw, ticker, 1)
+                if frame.empty:
+                    frame = raw
+                reconciliation = reconcile_ohlc_levels(frame, invert=invert)
+                series = reconciliation.levels
+                if series.notna().sum() <= 1:
+                    continue
+                gross = series / series.shift(1)
+                material_transitions = int(
+                    ((gross < (1.0 / 1.8)) | (gross > 1.8)).fillna(False).sum()
+                )
+                score = (
+                    reconciliation.unresolved_count,
+                    material_transitions,
+                    reconciliation.correction_count,
+                    priority,
+                )
+                usable.append((score, ticker, series))
+                if reconciliation.correction_count:
+                    logger.info(
+                        "Reconciled %s impossible FX close observation(s) for %s",
+                        reconciliation.correction_count,
+                        ticker,
+                    )
             except Exception as exc:
                 logger.warning("FX download failed for %s: %s", ticker, exc)
+        if usable:
+            score, ticker, series = min(usable, key=lambda item: item[0])
+            if score[0] or score[1]:
+                logger.warning(
+                    "Selected FX history %s with quality score unresolved=%s transitions=%s",
+                    ticker,
+                    score[0],
+                    score[1],
+                )
+            return series
         raise ValueError(
             f"Unable to convert {source_currency} assets into {target_currency}; "
             "no Yahoo FX history was available"
