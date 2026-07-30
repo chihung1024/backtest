@@ -3,6 +3,8 @@ name: Validate live FX history
 on:
   push:
     branches: [fix/fx-ohlc-reconciliation]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
