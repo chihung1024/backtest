@@ -46,6 +46,91 @@ def test_adjustment_factor_recovers_an_omitted_split_event() -> None:
     assert result.distribution_multipliers.iloc[1] == pytest.approx(4.0)
 
 
+def test_synthetic_suspension_recovers_prepositioned_scale_transition() -> None:
+    index = pd.DatetimeIndex(
+        [
+            "2025-11-13",
+            "2025-11-14",
+            "2025-11-17",
+            "2025-11-18",
+            "2025-11-19",
+            "2025-11-20",
+            "2025-11-21",
+            "2025-11-24",
+            "2025-11-25",
+            "2025-11-26",
+            "2025-11-27",
+        ]
+    )
+    close = pd.Series(
+        [254.10, 248.50, 35.57, 35.04, 35.04, 35.04, 35.04, 35.04, 35.04, 35.35, 35.68],
+        index=index,
+    )
+    result = reconcile_corporate_actions(
+        close=close,
+        adjusted=close.copy(),
+        splits=pd.Series(0.0, index=index),
+    )
+
+    expected = 35.57 / 248.50 * 7.0
+    assert result.splits.loc[pd.Timestamp("2025-11-17")] == pytest.approx(7.0)
+    assert result.close_gross.loc[pd.Timestamp("2025-11-17")] == pytest.approx(expected)
+    assert result.adjusted_gross.loc[pd.Timestamp("2025-11-17")] == pytest.approx(expected)
+    assert result.corrections.loc[pd.Timestamp("2025-11-17")]
+
+
+def test_flat_quotes_without_a_scale_break_do_not_create_a_split() -> None:
+    index = pd.DatetimeIndex(
+        [
+            "2025-11-13",
+            "2025-11-14",
+            "2025-11-17",
+            "2025-11-18",
+            "2025-11-19",
+            "2025-11-20",
+            "2025-11-21",
+            "2025-11-24",
+            "2025-11-25",
+            "2025-11-26",
+        ]
+    )
+    close = pd.Series(
+        [100.0, 101.0, 101.5, 101.2, 101.2, 101.2, 101.2, 101.2, 101.2, 102.0],
+        index=index,
+    )
+    result = reconcile_corporate_actions(
+        close=close,
+        adjusted=close.copy(),
+        splits=pd.Series(0.0, index=index),
+    )
+
+    assert result.splits.eq(0.0).all()
+    assert not result.corrections.any()
+
+
+def test_large_return_before_non_dense_flat_rows_is_preserved() -> None:
+    index = pd.DatetimeIndex(
+        [
+            "2025-01-02",
+            "2025-01-03",
+            "2025-01-06",
+            "2025-01-08",
+            "2025-01-10",
+            "2025-01-14",
+            "2025-01-15",
+        ]
+    )
+    close = pd.Series([100.0, 50.0, 50.0, 50.0, 50.0, 50.0, 52.0], index=index)
+    result = reconcile_corporate_actions(
+        close=close,
+        adjusted=close.copy(),
+        splits=pd.Series(0.0, index=index),
+    )
+
+    assert result.splits.eq(0.0).all()
+    assert result.close_gross.iloc[1] == pytest.approx(0.5)
+
+
 def test_suspension_boundary_recovers_when_both_price_series_are_unadjusted() -> None:
     index = pd.DatetimeIndex(
         ["2025-11-17", "2025-11-18", "2025-11-26", "2025-11-27"]

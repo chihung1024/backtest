@@ -12,6 +12,10 @@ _EXACT_RATIO_TOLERANCE = math.log(1.035)
 _INFERRED_RETURN_LIMIT = math.log(1.35)
 _MINIMUM_IMPROVEMENT = math.log(1.20)
 _MIN_MISSING_BUSINESS_DAYS = 3
+_MAX_ROWS_BEFORE_SYNTHETIC_SUSPENSION = 3
+_MIN_SYNTHETIC_SUSPENSION_ROWS = 3
+_SYNTHETIC_SUSPENSION_PRICE_TOLERANCE = math.log(1.0025)
+_POST_SUSPENSION_RETURN_LIMIT = math.log(1.20)
 _COMPLEXITY_PENALTY = 0.0025
 
 
@@ -33,18 +37,20 @@ def reconcile_corporate_actions(
 ) -> CorporateActionReconciliation:
     """Reconcile explicit and omitted share-scale transitions without symbol rules.
 
-    The resolver uses three independent representations of the same economic path:
+    The resolver uses four independent representations of the same economic path:
 
     1. explicit split events supplied by the market-data source;
     2. discontinuities in the adjusted-to-unadjusted price factor, after removing the
-       exact cash-distribution adjustment; and
-    3. a conservative suspension-boundary fallback for feeds where both the split event
-       and adjusted-price correction are missing.
+       exact cash-distribution adjustment;
+    3. a pre-positioned scale transition followed by a synthetic suspension plateau,
+       for feeds that rewrite a few pre-suspension rows into post-action units; and
+    4. a missing-date suspension boundary for feeds where the suspended dates are absent.
 
     A ratio is applied only when it removes a price-unit discontinuity. Genuine large
-    returns on ordinary consecutive trading days remain untouched. The returned
-    distribution multiplier records whether the prior close was expressed in pre-action
-    units, so cash paid per current unit is converted to the same economic basis exactly.
+    returns on ordinary consecutive trading days remain untouched unless the surrounding
+    rows independently exhibit a synthetic suspension pattern. The returned distribution
+    multiplier records whether the prior close was expressed in pre-action units, so cash
+    paid per current unit is converted to the same economic basis exactly.
     """
     index = pd.DatetimeIndex(close.index)
     native_close = _positive_series(close, index)
@@ -86,6 +92,36 @@ def reconcile_corporate_actions(
         resolved_splits.iloc[position] = ratio
         trusted.iloc[position] = True
 
+    # Some feeds rewrite one or more final pre-suspension rows into post-action units and
+    # then emit artificial flat OHLC rows during the suspension. In that representation the
+    # scale break occurs on an ordinary trading-day boundary, while the later suspension
+    # contains no missing dates. Recover the share multiplier only when the price break is
+    # followed within a few rows by a multi-day, business-date-dense, near-perfect plateau
+    # that is bounded by prices continuing on the same post-action scale.
+    for position in range(1, len(index)):
+        ratio_value = float(resolved_splits.iloc[position])
+        if ratio_value > 0.0 and not np.isclose(ratio_value, 1.0):
+            continue
+
+        raw_gross = float(close_gross.iloc[position])
+        total_gross = float(adjusted_gross.iloc[position])
+        if not _matching_price_scale(raw_gross, total_gross):
+            continue
+
+        ratio = _best_simple_ratio(1.0 / raw_gross, exact=False)
+        if ratio is None or not _materially_improves(raw_gross, ratio):
+            continue
+        if abs(math.log(raw_gross * ratio)) > _local_return_limit(close_gross, position):
+            continue
+        if not _has_forward_synthetic_suspension(
+            index=index,
+            close=native_close,
+            adjusted=native_adjusted,
+            position=position,
+        ):
+            continue
+        resolved_splits.iloc[position] = ratio
+
     # Some exchanges suspend a security while units are replaced. If the upstream feed
     # omits both the event and the adjustment, the resumption row contains the scale change
     # in both Close and Adj Close. Calendar weekends are not evidence of suspension, so this
@@ -107,9 +143,7 @@ def reconcile_corporate_actions(
 
         raw_gross = float(close_gross.iloc[position])
         total_gross = float(adjusted_gross.iloc[position])
-        if not _valid_gross(raw_gross) or not _valid_gross(total_gross):
-            continue
-        if abs(math.log(raw_gross) - math.log(total_gross)) > math.log(1.05):
+        if not _matching_price_scale(raw_gross, total_gross):
             continue
 
         ratio = _best_simple_ratio(1.0 / raw_gross, exact=False)
@@ -209,6 +243,87 @@ def _missing_business_days(previous: pd.Timestamp, current: pd.Timestamp) -> int
     start = (previous.normalize() + pd.Timedelta(days=1)).date()
     end = current.normalize().date()
     return int(np.busday_count(start, end))
+
+
+def _matching_price_scale(close_gross: float, adjusted_gross: float) -> bool:
+    if not _valid_gross(close_gross) or not _valid_gross(adjusted_gross):
+        return False
+    return abs(math.log(close_gross) - math.log(adjusted_gross)) <= math.log(1.05)
+
+
+def _has_forward_synthetic_suspension(
+    *,
+    index: pd.DatetimeIndex,
+    close: pd.Series,
+    adjusted: pd.Series,
+    position: int,
+) -> bool:
+    latest_start = min(
+        len(index) - _MIN_SYNTHETIC_SUSPENSION_ROWS,
+        position + _MAX_ROWS_BEFORE_SYNTHETIC_SUSPENSION,
+    )
+    for run_start in range(position, latest_start + 1):
+        run_end = run_start
+        while run_end + 1 < len(index) and _same_quote(
+            close.iloc[run_end],
+            adjusted.iloc[run_end],
+            close.iloc[run_end + 1],
+            adjusted.iloc[run_end + 1],
+        ):
+            run_end += 1
+
+        if run_end - run_start + 1 < _MIN_SYNTHETIC_SUSPENSION_ROWS:
+            continue
+        if not _business_date_dense(index[run_start : run_end + 1]):
+            continue
+
+        # The plateau must begin at the same post-action quote reached by the immediately
+        # preceding row; otherwise an unrelated later flat market could be mis-associated.
+        if run_start > position and not _same_quote(
+            close.iloc[run_start - 1],
+            adjusted.iloc[run_start - 1],
+            close.iloc[run_start],
+            adjusted.iloc[run_start],
+        ):
+            continue
+
+        # A bounded plateau is materially stronger evidence than an illiquid tail with no
+        # later quote. The first following quote must remain on the same price scale.
+        next_position = run_end + 1
+        if next_position >= len(index):
+            continue
+        next_close_gross = float(close.iloc[next_position] / close.iloc[run_end])
+        next_adjusted_gross = float(adjusted.iloc[next_position] / adjusted.iloc[run_end])
+        if not _matching_price_scale(next_close_gross, next_adjusted_gross):
+            continue
+        if abs(math.log(next_close_gross)) > _POST_SUSPENSION_RETURN_LIMIT:
+            continue
+        return True
+    return False
+
+
+def _same_quote(
+    first_close: float,
+    first_adjusted: float,
+    second_close: float,
+    second_adjusted: float,
+) -> bool:
+    values = (first_close, first_adjusted, second_close, second_adjusted)
+    if not all(_valid_gross(float(value)) for value in values):
+        return False
+    close_change = abs(math.log(float(second_close) / float(first_close)))
+    adjusted_change = abs(math.log(float(second_adjusted) / float(first_adjusted)))
+    return (
+        close_change <= _SYNTHETIC_SUSPENSION_PRICE_TOLERANCE
+        and adjusted_change <= _SYNTHETIC_SUSPENSION_PRICE_TOLERANCE
+    )
+
+
+def _business_date_dense(index: pd.DatetimeIndex) -> bool:
+    if len(index) < _MIN_SYNTHETIC_SUSPENSION_ROWS:
+        return False
+    expected = pd.bdate_range(index[0].normalize(), index[-1].normalize())
+    return len(expected) == len(index) and index.equals(pd.DatetimeIndex(expected))
 
 
 def _valid_gross(value: float) -> bool:
