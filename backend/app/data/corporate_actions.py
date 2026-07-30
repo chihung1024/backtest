@@ -16,6 +16,9 @@ _MAX_ROWS_BEFORE_SYNTHETIC_SUSPENSION = 3
 _MIN_SYNTHETIC_SUSPENSION_ROWS = 3
 _SYNTHETIC_SUSPENSION_PRICE_TOLERANCE = math.log(1.0025)
 _POST_SUSPENSION_RETURN_LIMIT = math.log(1.20)
+_MIN_TRANSIENT_SCALE_RATIO = 3.0
+_TRANSIENT_RATIO_TOLERANCE = math.log(1.15)
+_TRANSIENT_MINIMUM_IMPROVEMENT = 2.0 * math.log(2.0)
 _COMPLEXITY_PENALTY = 0.0025
 
 
@@ -35,22 +38,21 @@ def reconcile_corporate_actions(
     splits: pd.Series,
     distributions: pd.Series | None = None,
 ) -> CorporateActionReconciliation:
-    """Reconcile explicit and omitted share-scale transitions without symbol rules.
+    """Reconcile corporate actions and reversible price-unit discontinuities.
 
-    The resolver uses four independent representations of the same economic path:
+    The resolver combines independent representations of the same economic path:
 
     1. explicit split events supplied by the market-data source;
     2. discontinuities in the adjusted-to-unadjusted price factor, after removing the
        exact cash-distribution adjustment;
-    3. a pre-positioned scale transition followed by a synthetic suspension plateau,
-       for feeds that rewrite a few pre-suspension rows into post-action units; and
-    4. a missing-date suspension boundary for feeds where the suspended dates are absent.
+    3. isolated one-row price-scale pulses whose inverse transition on the following row
+       preserves a plausible two-day return;
+    4. a pre-positioned scale transition followed by a synthetic suspension plateau; and
+    5. a missing-date suspension boundary for feeds where suspended dates are absent.
 
-    A ratio is applied only when it removes a price-unit discontinuity. Genuine large
-    returns on ordinary consecutive trading days remain untouched unless the surrounding
-    rows independently exhibit a synthetic suspension pattern. The returned distribution
-    multiplier records whether the prior close was expressed in pre-action units, so cash
-    paid per current unit is converted to the same economic basis exactly.
+    A share multiplier is recorded only for persistent unit changes. A transient pulse
+    changes two adjacent return factors by reciprocal amounts, preserving the exact
+    cumulative return from the observation before the pulse to the observation after it.
     """
     index = pd.DatetimeIndex(close.index)
     native_close = _positive_series(close, index)
@@ -91,6 +93,17 @@ def reconcile_corporate_actions(
             continue
         resolved_splits.iloc[position] = ratio
         trusted.iloc[position] = True
+
+    # A corrupt vendor row can be expressed in the wrong unit for one observation only.
+    # It creates a large scale move and an inverse move on the next row, while their product
+    # still equals the correct two-observation return. Remove that temporary scale without
+    # classifying it as a split or changing the bridge return.
+    transient_corrections = _reconcile_transient_scale_pulses(
+        close_gross=close_gross,
+        adjusted_gross=adjusted_gross,
+        splits=resolved_splits,
+        distributions=cash_distributions,
+    )
 
     # Some feeds rewrite one or more final pre-suspension rows into post-action units and
     # then emit artificial flat OHLC rows during the suspension. In that representation the
@@ -154,7 +167,7 @@ def reconcile_corporate_actions(
         resolved_splits.iloc[position] = ratio
 
     distribution_multipliers = pd.Series(1.0, index=index, dtype=float)
-    corrections = pd.Series(False, index=index, dtype=bool)
+    corrections = transient_corrections.copy()
     for position in range(1, len(index)):
         ratio = float(resolved_splits.iloc[position])
         if not np.isfinite(ratio) or ratio <= 0.0 or np.isclose(ratio, 1.0):
@@ -175,7 +188,9 @@ def reconcile_corporate_actions(
             ratio,
             trusted=bool(trusted.iloc[position]),
         )
-        corrections.iloc[position] = close_changed or adjusted_changed
+        corrections.iloc[position] = (
+            bool(corrections.iloc[position]) or close_changed or adjusted_changed
+        )
 
     return CorporateActionReconciliation(
         close_gross=close_gross,
@@ -237,6 +252,140 @@ def _best_simple_ratio(target: float, *, exact: bool) -> float | None:
     if exact and error > _EXACT_RATIO_TOLERANCE:
         return None
     return ratio
+
+
+def _reconcile_transient_scale_pulses(
+    *,
+    close_gross: pd.Series,
+    adjusted_gross: pd.Series,
+    splits: pd.Series,
+    distributions: pd.Series,
+) -> pd.Series:
+    corrections = pd.Series(False, index=close_gross.index, dtype=bool)
+    for position in range(1, len(close_gross) - 1):
+        if _has_action_nearby(splits, distributions, position):
+            continue
+
+        entry_close = float(close_gross.iloc[position])
+        exit_close = float(close_gross.iloc[position + 1])
+        entry_adjusted = float(adjusted_gross.iloc[position])
+        exit_adjusted = float(adjusted_gross.iloc[position + 1])
+        ratio = _best_transient_scale_ratio(
+            close_gross=close_gross,
+            adjusted_gross=adjusted_gross,
+            position=position,
+            entry_close=entry_close,
+            exit_close=exit_close,
+            entry_adjusted=entry_adjusted,
+            exit_adjusted=exit_adjusted,
+        )
+        if ratio is None:
+            continue
+
+        close_gross.iloc[position] = entry_close * ratio
+        close_gross.iloc[position + 1] = exit_close / ratio
+        adjusted_gross.iloc[position] = entry_adjusted * ratio
+        adjusted_gross.iloc[position + 1] = exit_adjusted / ratio
+        corrections.iloc[position] = True
+    return corrections
+
+
+def _has_action_nearby(
+    splits: pd.Series, distributions: pd.Series, position: int
+) -> bool:
+    for current in (position, position + 1):
+        split = float(splits.iloc[current])
+        distribution = float(distributions.iloc[current])
+        if split > 0.0 and not np.isclose(split, 1.0):
+            return True
+        if distribution > 0.0:
+            return True
+    return False
+
+
+def _best_transient_scale_ratio(
+    *,
+    close_gross: pd.Series,
+    adjusted_gross: pd.Series,
+    position: int,
+    entry_close: float,
+    exit_close: float,
+    entry_adjusted: float,
+    exit_adjusted: float,
+) -> float | None:
+    values = (entry_close, exit_close, entry_adjusted, exit_adjusted)
+    if not all(_valid_gross(value) for value in values):
+        return None
+    if not _matching_price_scale(entry_close, entry_adjusted):
+        return None
+    if not _matching_price_scale(exit_close, exit_adjusted):
+        return None
+
+    entry_log = math.log(entry_close)
+    exit_log = math.log(exit_close)
+    if entry_log * exit_log >= 0.0:
+        return None
+    if min(abs(entry_log), abs(exit_log)) < math.log(_MIN_TRANSIENT_SCALE_RATIO):
+        return None
+
+    close_bridge = entry_close * exit_close
+    adjusted_bridge = entry_adjusted * exit_adjusted
+    if not _matching_price_scale(close_bridge, adjusted_bridge):
+        return None
+    bridge_limit = min(
+        math.log(1.60),
+        _local_return_limit(close_gross, position)
+        + _local_return_limit(close_gross, position + 1),
+    )
+    if abs(math.log(close_bridge)) > bridge_limit:
+        return None
+    if abs(math.log(adjusted_bridge)) > bridge_limit:
+        return None
+
+    target = math.sqrt(exit_close / entry_close)
+    entry_limit = _local_return_limit(close_gross, position)
+    exit_limit = _local_return_limit(close_gross, position + 1)
+    adjusted_entry_limit = _local_return_limit(adjusted_gross, position)
+    adjusted_exit_limit = _local_return_limit(adjusted_gross, position + 1)
+    best: tuple[float, float] | None = None
+
+    for integer in range(int(_MIN_TRANSIENT_SCALE_RATIO), int(_MAX_SCALE_RATIO) + 1):
+        for ratio in (float(integer), 1.0 / float(integer)):
+            if (entry_close < 1.0) != (ratio > 1.0):
+                continue
+            target_error = abs(math.log(target / ratio))
+            if target_error > _TRANSIENT_RATIO_TOLERANCE:
+                continue
+
+            corrected = (
+                entry_close * ratio,
+                exit_close / ratio,
+                entry_adjusted * ratio,
+                exit_adjusted / ratio,
+            )
+            if not all(_valid_gross(value) for value in corrected):
+                continue
+            limits = (
+                entry_limit,
+                exit_limit,
+                adjusted_entry_limit,
+                adjusted_exit_limit,
+            )
+            if any(
+                abs(math.log(value)) > limit
+                for value, limit in zip(corrected, limits, strict=True)
+            ):
+                continue
+
+            raw_distance = sum(abs(math.log(value)) for value in values)
+            corrected_distance = sum(abs(math.log(value)) for value in corrected)
+            if raw_distance - corrected_distance < _TRANSIENT_MINIMUM_IMPROVEMENT:
+                continue
+            score = corrected_distance + target_error
+            if best is None or score < best[0]:
+                best = (score, ratio)
+
+    return None if best is None else best[1]
 
 
 def _missing_business_days(previous: pd.Timestamp, current: pd.Timestamp) -> int:
