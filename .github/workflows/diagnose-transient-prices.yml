@@ -22,7 +22,7 @@ jobs:
       - name: Install backend
         working-directory: backend
         run: python -m pip install -e .
-      - name: Inspect Yahoo discontinuities and normalized returns
+      - name: Inspect asset and FX discontinuities
         working-directory: backend
         run: |
           python - <<'PY'
@@ -31,78 +31,67 @@ jobs:
           import pandas as pd
           import yfinance as yf
 
-          from app.data.yfinance_provider import _history_from_frame
+          from app.data.yfinance_provider import YFinanceProvider, _history_from_frame
 
-          symbol = "USD"
-          raw = yf.download(
-              symbol,
-              start="2007-01-01",
-              end="2026-07-31",
-              auto_adjust=False,
-              actions=True,
-              repair=True,
-              keepna=True,
-              progress=False,
-              threads=False,
-              timeout=30,
-          )
-          if isinstance(raw.columns, pd.MultiIndex):
-              if symbol in raw.columns.get_level_values(0):
-                  raw = raw[symbol]
-              elif symbol in raw.columns.get_level_values(1):
-                  raw = raw.xs(symbol, axis=1, level=1)
-          raw.index = pd.to_datetime(raw.index).tz_localize(None)
-          close = pd.to_numeric(raw["Close"], errors="coerce")
-          adjusted = pd.to_numeric(raw.get("Adj Close", raw["Close"]), errors="coerce")
-          close_gross = close / close.shift(1)
-          adjusted_gross = adjusted / adjusted.shift(1)
+          def frame_for(symbol: str, *, auto_adjust: bool, actions: bool) -> pd.DataFrame:
+              raw = yf.download(
+                  symbol,
+                  start="2007-01-01",
+                  end="2026-07-31",
+                  auto_adjust=auto_adjust,
+                  actions=actions,
+                  repair=True,
+                  keepna=True,
+                  progress=False,
+                  threads=False,
+                  timeout=30,
+              )
+              if isinstance(raw.columns, pd.MultiIndex):
+                  if symbol in raw.columns.get_level_values(0):
+                      raw = raw[symbol]
+                  elif symbol in raw.columns.get_level_values(1):
+                      raw = raw.xs(symbol, axis=1, level=1)
+              raw.index = pd.to_datetime(raw.index).tz_localize(None)
+              return raw
+
+          def show_levels(label: str, raw: pd.DataFrame) -> None:
+              close = pd.to_numeric(raw["Close"], errors="coerce")
+              gross = close / close.shift(1)
+              mask = (gross < 0.60) | (gross > 1.80)
+              print(f"\n{label}: rows={len(raw)} discontinuities={int(mask.sum())}")
+              columns = [
+                  column for column in [
+                      "Open", "High", "Low", "Close", "Adj Close", "Volume",
+                      "Dividends", "Stock Splits", "Capital Gains", "Repaired?",
+                  ] if column in raw.columns
+              ]
+              for timestamp in raw.index[mask.fillna(False)]:
+                  position = raw.index.get_loc(timestamp)
+                  start = max(0, position - 2)
+                  end = min(len(raw), position + 4)
+                  print("\nCANDIDATE", timestamp.date(), "gross", gross.iloc[position])
+                  print(raw.iloc[start:end][columns].to_string())
+
+          asset = frame_for("USD", auto_adjust=False, actions=True)
+          show_levels("ASSET USD", asset)
           history = _history_from_frame(
-              symbol,
-              raw,
-              date(2007, 1, 1),
-              date(2026, 7, 30),
-              currency="USD",
+              "USD", asset, date(2007, 1, 1), date(2026, 7, 30), currency="USD"
           )
           if history is None:
-              raise RuntimeError("normalization returned no history")
+              raise RuntimeError("normalization returned no asset history")
+          large = (history.total_returns < -0.40) | (history.total_returns > 0.80)
+          print("ASSET NORMALIZED LARGE", history.total_returns.loc[large].to_string())
 
-          raw_mask = (
-              (close_gross < 0.60)
-              | (close_gross > 1.80)
-              | (adjusted_gross < 0.60)
-              | (adjusted_gross > 1.80)
+          for ticker in ("TWD=X", "USDTWD=X", "TWDUSD=X"):
+              raw = frame_for(ticker, auto_adjust=True, actions=False)
+              show_levels(f"FX {ticker}", raw)
+
+          provider = YFinanceProvider()
+          fx = provider._download_fx_levels(
+              "USD", "TWD", date(2007, 1, 1), date(2026, 7, 30)
           )
-          normalized_mask = (
-              (history.total_returns < -0.40)
-              | (history.total_returns > 0.80)
-              | (history.price_returns < -0.40)
-              | (history.price_returns > 0.80)
-              | (history.dividend_returns > 0.40)
-          )
-          candidates = raw.index[raw_mask.fillna(False)].union(
-              history.total_returns.index[normalized_mask.fillna(False)]
-          )
-          print(
-              f"rows={len(raw)} candidates={len(candidates)} "
-              f"split_events={history.split_events} "
-              f"corrections={history.split_corrections}"
-          )
-          requested = [
-              "Open", "High", "Low", "Close", "Adj Close", "Volume",
-              "Dividends", "Stock Splits", "Capital Gains", "Repaired?",
-          ]
-          columns = [column for column in requested if column in raw.columns]
-          for timestamp in candidates:
-              position = raw.index.get_indexer([timestamp], method="nearest")[0]
-              start = max(0, position - 3)
-              end = min(len(raw), position + 5)
-              print("\nCANDIDATE", timestamp.date())
-              print(raw.iloc[start:end][columns].to_string())
-              print(
-                  "raw_close_gross", close_gross.get(timestamp),
-                  "raw_adjusted_gross", adjusted_gross.get(timestamp),
-                  "normalized_total", history.total_returns.get(timestamp),
-                  "normalized_price", history.price_returns.get(timestamp),
-                  "normalized_distribution", history.dividend_returns.get(timestamp),
-              )
+          fx_gross = fx / fx.shift(1)
+          fx_large = (fx_gross < 0.60) | (fx_gross > 1.80)
+          print("\nSELECTED FX LARGE")
+          print(pd.DataFrame({"level": fx, "gross": fx_gross}).loc[fx_large].to_string())
           PY
