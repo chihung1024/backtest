@@ -12,6 +12,7 @@ import yfinance as yf
 from cachetools import TTLCache
 
 from app.data.base import AssetHistory
+from app.data.corporate_actions import reconcile_corporate_actions
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +80,6 @@ _CURRENCY_ALIASES = {
 _REPAIR_LOOKBACK_DAYS = 400
 _REPAIR_LOOKAHEAD_DAYS = 8
 _FX_LOOKBACK_DAYS = 10
-_SPLIT_UNDERLYING_TOLERANCE = np.log(1.25)
-_SPLIT_MINIMUM_IMPROVEMENT = np.log(1.10)
 
 
 def normalize_symbol(symbol: str) -> str:
@@ -410,11 +409,19 @@ def _history_from_frame(
         capital_gains = capital_gains.clip(lower=0.0)
     distributions = dividends + capital_gains
 
-    close_gross, close_split_fixes = _correct_residual_splits(close / close.shift(1), splits)
-    adjusted_gross, adjusted_split_fixes = _correct_residual_splits(
-        adjusted / adjusted.shift(1), splits
+    reconciliation = reconcile_corporate_actions(
+        close=close,
+        adjusted=adjusted,
+        splits=splits,
+        distributions=distributions,
     )
-    distribution_returns = (distributions / close.shift(1)).replace(
+    close_gross = reconciliation.close_gross
+    adjusted_gross = reconciliation.adjusted_gross
+    splits = reconciliation.splits
+    split_fixes = reconciliation.corrections
+    distribution_returns = (
+        distributions * reconciliation.distribution_multipliers / close.shift(1)
+    ).replace(
         [np.inf, -np.inf], np.nan
     ).fillna(0.0)
 
@@ -457,9 +464,7 @@ def _history_from_frame(
         ((splits.loc[window_index] > 0) & ~np.isclose(splits.loc[window_index], 1.0)).sum()
     )
     split_corrections = int(
-        (close_split_fixes | adjusted_split_fixes)
-        .reindex(window_index, fill_value=False)
-        .sum()
+        split_fixes.reindex(window_index, fill_value=False).sum()
     )
 
     return AssetHistory(
@@ -510,36 +515,6 @@ def _align_actions(
             result.loc[target] += amount
     return result
 
-
-def _correct_residual_splits(
-    gross_returns: pd.Series, splits: pd.Series
-) -> tuple[pd.Series, pd.Series]:
-    """Conservatively repair an unmistakable unadjusted split transition."""
-    corrected = gross_returns.astype(float).copy()
-    changed = pd.Series(False, index=corrected.index, dtype=bool)
-    for timestamp, ratio_value in splits.items():
-        ratio = float(ratio_value)
-        gross = float(corrected.get(timestamp, np.nan))
-        if (
-            not np.isfinite(ratio)
-            or ratio <= 0.0
-            or np.isclose(ratio, 1.0)
-            or not np.isfinite(gross)
-            or gross <= 0.0
-        ):
-            continue
-        candidate = gross * ratio
-        if candidate <= 0.0 or not np.isfinite(candidate):
-            continue
-        raw_distance = abs(np.log(gross))
-        candidate_distance = abs(np.log(candidate))
-        if (
-            candidate_distance <= _SPLIT_UNDERLYING_TOLERANCE
-            and raw_distance - candidate_distance >= _SPLIT_MINIMUM_IMPROVEMENT
-        ):
-            corrected.loc[timestamp] = candidate
-            changed.loc[timestamp] = True
-    return corrected, changed
 
 
 def _ticker_frame(raw: pd.DataFrame, symbol: str, symbol_count: int) -> pd.DataFrame:
