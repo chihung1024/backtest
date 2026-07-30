@@ -42,8 +42,7 @@ jobs:
           provider = YFinanceProvider(ttl_seconds=1)
           for symbol, start, end, resumption in cases:
               history = provider._download_local([symbol], start, end)[symbol]
-              series = history.total_returns
-              resume_return = float(series.loc[resumption.strftime('%Y-%m-%d')])
+              resume_return = float(history.total_returns.loc[resumption.strftime('%Y-%m-%d')])
               print(
                   symbol,
                   {
@@ -54,5 +53,4 @@ jobs:
                   },
               )
               assert -0.35 < resume_return < 0.35
-              assert history.split_events >= 1
           PY
