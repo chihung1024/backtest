@@ -1,6 +1,8 @@
 name: Diagnose transient price scales
 
 on:
+  push:
+    branches: [fix/transient-price-scale-pulses]
   pull_request:
     branches: [main]
 
@@ -48,27 +50,47 @@ jobs:
                   raw = raw.xs(symbol, axis=1, level=1)
           raw.index = pd.to_datetime(raw.index).tz_localize(None)
           close = pd.to_numeric(raw["Close"], errors="coerce")
-          adjusted = pd.to_numeric(raw.get("Adj Close", raw["Close"]), errors="coerce")
           gross = close / close.shift(1)
           next_gross = gross.shift(-1)
           bridge = close.shift(-1) / close.shift(1)
+          log_gross = gross.map(
+              lambda value: abs(math.log(value))
+              if pd.notna(value) and value > 0
+              else 0.0
+          )
+          log_next = next_gross.map(
+              lambda value: abs(math.log(value))
+              if pd.notna(value) and value > 0
+              else 0.0
+          )
+          log_bridge = bridge.map(
+              lambda value: abs(math.log(value))
+              if pd.notna(value) and value > 0
+              else 999.0
+          )
           pulse = (
               (gross > 0)
               & (next_gross > 0)
-              & (gross.abs() != float("inf"))
-              & (next_gross.abs() != float("inf"))
-              & (gross.map(lambda x: abs(math.log(x)) if pd.notna(x) and x > 0 else 0) > math.log(3))
-              & (next_gross.map(lambda x: abs(math.log(x)) if pd.notna(x) and x > 0 else 0) > math.log(3))
-              & (bridge.map(lambda x: abs(math.log(x)) if pd.notna(x) and x > 0 else 999) < math.log(1.5))
+              & (log_gross > math.log(3))
+              & (log_next > math.log(3))
+              & (log_bridge < math.log(1.5))
           )
           candidates = raw.loc[pulse].index
           print(f"rows={len(raw)} candidates={len(candidates)}")
-          columns = [column for column in ["Open", "High", "Low", "Close", "Adj Close", "Volume", "Dividends", "Stock Splits", "Capital Gains", "Repaired?"] if column in raw.columns]
+          requested = [
+              "Open", "High", "Low", "Close", "Adj Close", "Volume",
+              "Dividends", "Stock Splits", "Capital Gains", "Repaired?",
+          ]
+          columns = [column for column in requested if column in raw.columns]
           for timestamp in candidates:
               position = raw.index.get_loc(timestamp)
               start = max(0, position - 3)
               end = min(len(raw), position + 4)
               print("\nCANDIDATE", timestamp.date())
               print(raw.iloc[start:end][columns].to_string())
-              print("gross", gross.iloc[position], "next_gross", next_gross.iloc[position], "bridge", bridge.iloc[position])
+              print(
+                  "gross", gross.iloc[position],
+                  "next_gross", next_gross.iloc[position],
+                  "bridge", bridge.iloc[position],
+              )
           PY
