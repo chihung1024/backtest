@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_environment() -> str:
+    return "production" if os.getenv("VERCEL") else "development"
 
 
 class Settings(BaseSettings):
@@ -14,7 +19,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    environment: str = "development"
+    environment: str = Field(default_factory=_default_environment)
     api_key: str | None = None
     cors_origins: str = "http://localhost:5173,https://chihung1024.github.io"
     fred_api_key: str | None = None
