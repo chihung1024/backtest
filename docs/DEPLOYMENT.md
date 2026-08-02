@@ -11,7 +11,7 @@
 - Production Branch：`main`
 - Plan：Hobby
 
-此架構不需要 Google Cloud Billing，也不需要自訂 Vercel 環境變數。
+此架構不需要 Google Cloud Billing，也**完全不需要自訂 Vercel 環境變數**。
 
 ## 1. Vercel 後端
 
