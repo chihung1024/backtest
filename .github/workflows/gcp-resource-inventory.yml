@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
   id-token: write
 
 concurrency:
@@ -56,14 +57,6 @@ jobs:
             local status=$?
             set -e
             printf '%s\t%s\n' "$name" "$status" | tee -a gcp-inventory/status.tsv
-            if [[ -s "gcp-inventory/${name}.stderr" ]]; then
-              {
-                echo "### ${name} (exit ${status})"
-                echo '```text'
-                sed -n '1,30p' "gcp-inventory/${name}.stderr"
-                echo '```'
-              } >> "$GITHUB_STEP_SUMMARY"
-            fi
           }
 
           capture project gcloud projects describe "$GCP_PROJECT_ID" --format=json
@@ -75,15 +68,153 @@ jobs:
           capture service-accounts gcloud iam service-accounts list --project="$GCP_PROJECT_ID" --format=json
           capture workload-identity-pools gcloud iam workload-identity-pools list --location=global --project="$GCP_PROJECT_ID" --format=json
 
-          {
-            echo "## GCP inventory status"
-            echo
-            echo '| Resource | Exit code |'
-            echo '|---|---:|'
-            while IFS=$'\t' read -r name status; do
-              echo "| $name | $status |"
-            done < gcp-inventory/status.tsv
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Build sanitized issue report
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+
+          root = Path("gcp-inventory")
+
+          def load(name: str):
+              path = root / f"{name}.json"
+              if not path.exists() or not path.read_text().strip():
+                  return None
+              try:
+                  return json.loads(path.read_text())
+              except json.JSONDecodeError:
+                  return None
+
+          statuses = {}
+          for line in (root / "status.tsv").read_text().splitlines():
+              if not line.strip():
+                  continue
+              name, code = line.split("\t", 1)
+              statuses[name] = int(code)
+
+          lines = [
+              "# GCP resource inventory",
+              "",
+              "Automated read-only inventory for `backtest-465701`.",
+              "No delete, disable, unlink, secret-value access, or IAM mutation was executed.",
+              "",
+              f"- Source commit: `{__import__('os').environ.get('GITHUB_SHA', '')}`",
+              f"- Workflow run: {__import__('os').environ.get('GITHUB_SERVER_URL', '')}/{__import__('os').environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{__import__('os').environ.get('GITHUB_RUN_ID', '')}",
+              "",
+              "## Command status",
+              "",
+              "| Resource | Exit code |",
+              "|---|---:|",
+          ]
+          lines.extend(f"| {name} | {code} |" for name, code in statuses.items())
+
+          project = load("project") or {}
+          billing = load("billing") or {}
+          account = str(billing.get("billingAccountName") or "")
+          masked_account = f"…{account[-4:]}" if account else "none"
+          lines += [
+              "",
+              "## Project",
+              "",
+              f"- Project ID: `{project.get('projectId', 'unknown')}`",
+              f"- Project number: `{project.get('projectNumber', 'unknown')}`",
+              f"- Lifecycle: `{project.get('lifecycleState', 'unknown')}`",
+              f"- Billing enabled: `{billing.get('billingEnabled', 'unknown')}`",
+              f"- Billing account: `{masked_account}`",
+          ]
+
+          run_services = load("cloud-run") or []
+          lines += ["", "## Cloud Run", ""]
+          if run_services:
+              lines += ["| Service | Region | URL |", "|---|---|---|"]
+              for item in run_services:
+                  metadata = item.get("metadata", {})
+                  status = item.get("status", {})
+                  labels = metadata.get("labels", {})
+                  region = labels.get("cloud.googleapis.com/location") or labels.get("run.googleapis.com/location") or "unknown"
+                  lines.append(f"| `{metadata.get('name', 'unknown')}` | `{region}` | `{status.get('url', '')}` |")
+          else:
+              lines.append("None visible to the deployment identity.")
+
+          repos = load("artifact-repositories") or []
+          lines += ["", "## Artifact Registry", ""]
+          if repos:
+              lines += ["| Repository | Location | Format | Size bytes |", "|---|---|---|---:|"]
+              for item in repos:
+                  name = str(item.get("name", "unknown")).split("/")[-1]
+                  lines.append(
+                      f"| `{name}` | `{item.get('location', 'unknown')}` | `{item.get('format', 'unknown')}` | {item.get('sizeBytes', 0)} |"
+                  )
+          else:
+              lines.append("None visible to the deployment identity.")
+
+          secrets = load("secrets") or []
+          lines += ["", "## Secret Manager", ""]
+          if secrets:
+              for item in secrets:
+                  lines.append(f"- `{str(item.get('name', 'unknown')).split('/')[-1]}`")
+          else:
+              lines.append("None visible to the deployment identity.")
+
+          accounts = load("service-accounts") or []
+          lines += ["", "## Service accounts", ""]
+          if accounts:
+              for item in accounts:
+                  lines.append(
+                      f"- `{item.get('email', 'unknown')}` — {item.get('displayName', '')} — disabled=`{item.get('disabled', False)}`"
+                  )
+          else:
+              lines.append("None visible to the deployment identity.")
+
+          pools = load("workload-identity-pools") or []
+          lines += ["", "## Workload Identity Pools", ""]
+          if pools:
+              for item in pools:
+                  lines.append(
+                      f"- `{str(item.get('name', 'unknown')).split('/')[-1]}` — state=`{item.get('state', 'unknown')}`"
+                  )
+          else:
+              lines.append("None visible to the deployment identity.")
+
+          services = load("enabled-services") or []
+          names = sorted(
+              str(item.get("config", {}).get("name") or item.get("name") or "")
+              for item in services
+          )
+          names = [name for name in names if name]
+          lines += ["", "## Enabled APIs", ""]
+          lines.extend(f"- `{name}`" for name in names)
+          if not names:
+              lines.append("None visible to the deployment identity.")
+
+          failures = [name for name, code in statuses.items() if code != 0]
+          if failures:
+              lines += ["", "## Permission/error summaries", ""]
+              for name in failures:
+                  stderr = (root / f"{name}.stderr").read_text(errors="replace").strip()
+                  stderr = stderr[:800].replace("`", "'")
+                  lines += [f"### {name}", "", f"```text\n{stderr}\n```"]
+
+          (root / "issue.md").write_text("\n".join(lines) + "\n")
+          PY
+
+      - name: Publish sanitized inventory issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title='[automation] GCP resource inventory'
+          issue_number="$(gh issue list --state all --search "${title} in:title" --json number,title --jq '.[] | select(.title == "[automation] GCP resource inventory") | .number' | head -n1)"
+          if [[ -n "$issue_number" ]]; then
+            gh issue edit "$issue_number" --title "$title" --body-file gcp-inventory/issue.md
+            gh issue reopen "$issue_number" || true
+          else
+            gh issue create --title "$title" --body-file gcp-inventory/issue.md
+          fi
 
       - name: Upload inventory artifact
         uses: actions/upload-artifact@v4
