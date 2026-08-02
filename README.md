@@ -2,9 +2,8 @@
 
 一套面向美股、台股與跨幣別資產的個人投資組合回測網站。介面參考 Portfolio Visualizer 的 Portfolio Performance 工作流，以 `yfinance` 為主要行情來源，並保留透明、可測試的計算核心。
 
-線上網站：[https://chihung1024.github.io/backtest/](https://chihung1024.github.io/backtest/)
-
-正式 API：[https://portfolio-backtest-api-454423251671.asia-east1.run.app](https://portfolio-backtest-api-454423251671.asia-east1.run.app)
+- Web：`https://chihung1024.github.io/backtest/`
+- API：`https://portfolio-backtest-api.vercel.app`
 
 > 本專案僅供個人研究與教育，不構成投資建議。Yahoo Finance 資料的使用仍受 Yahoo 與 yfinance 的使用條款限制。
 
@@ -18,24 +17,26 @@
 - 每月／季／半年／年與偏離門檻再平衡。
 - 股息再投入或保留現金、股息收入、交易成本與槓桿利息。
 - 時間加權報酬、CAGR、Sharpe、Sortino、Calmar、VaR、CVaR、回撤、Alpha、Beta。
-- 預設逐日資產成長與回撤曲線；成長曲線預設使用對數 Y 軸並可手動切換線性，日期刻度會依期間動態調整。
-- 所有回測結果以目標配置前 3 大標的與比例統一標示投資組合，方便辨識多組曲線。
 - 年度長條圖、月報酬熱圖、收入與期末配置。
 - Fama–French 因子回歸、報酬式風格分析與市場／波動／通膨／景氣環境分析。
-- 繁體中文／英文、長輩友善的手機介面與安全區適配；iPhone 日期欄、資產權重、圖表圖例與對話框皆採一致對齊與觸控尺寸。
-- 深色模式、CSV／JSON 匯出與無伺服器分享網址。
-- 一般重新整理即回到裝置適用的空白模型；模型可用無伺服器分享網址保存，個人 API 連線則只留在本機瀏覽器。
+- 繁體中文／英文、深色模式、CSV／JSON 匯出與無伺服器分享網址。
 
 ## 架構
 
 ```text
 frontend/   React、TypeScript、Vite、Recharts；由 GitHub Pages 託管
-backend/    FastAPI、yfinance、pandas、NumPy；由 Google Cloud Run 執行
-docs/       架構、計算方法、API 與逐步部署手冊
-.github/    CI、GitHub Pages、Cloud Run 與 Dependabot 自動化
+backend/    FastAPI、yfinance、pandas、NumPy；由 Vercel Hobby Python Function 執行
+docs/       架構、計算方法、API 與部署手冊
+.github/    CI、GitHub Pages、Vercel production acceptance
 ```
 
-詳細設計請參閱[系統架構](docs/ARCHITECTURE.md)、[回測方法](docs/METHODOLOGY.md)與[UI 品質標準](docs/UI_QUALITY.md)。
+正式環境不需要自訂環境變數：
+
+- Vercel 會自動被辨識為 production。
+- CORS 預設只允許本機與 `https://chihung1024.github.io`。
+- 未設定 API key 時，API 只接受允許清單中的瀏覽器 `Origin`；無 Origin 或其他來源會回傳 `403`。
+- 一般 API 每 IP 每分鐘 20 次，回測端點每 IP 每分鐘 4 次。
+- Vercel Hobby 超過免費額度時服務會受限，不會轉成 Google Cloud 按量計費。
 
 ## 本機啟動
 
@@ -79,11 +80,17 @@ npm test
 npm run build
 ```
 
-測試使用固定合成行情，不依賴 Yahoo Finance 當下是否可用。GitHub Actions 也會建置正式 Docker image，避免只在開發環境可執行。
+測試使用固定合成行情，不依賴 Yahoo Finance 當下是否可用。合併到 `main` 後，Vercel 會部署 production API，GitHub Actions 會等待相同 commit SHA 上線，再執行真實健康檢查、Origin 授權、標的搜尋與回測驗收。
 
 ## 部署
 
-合併到 `main` 後，GitHub Pages workflow 會發布前端，Cloud Run workflow 會透過短效 OIDC 身分自動部署 API；不保存 Google Cloud 服務帳號私鑰。正式資源識別碼可公開並已寫入 workflow，API 與 FRED 金鑰只存在 Google Secret Manager。完整設定、金鑰輪替與成本保護請參閱[免費資源部署指南](docs/DEPLOYMENT.md)。
+- 前端：GitHub Pages workflow。
+- 後端：Vercel Git Integration，Project Root Directory 為 `backend`。
+- Project：`portfolio-backtest-api`。
+- Production domain：`portfolio-backtest-api.vercel.app`。
+- 不再使用 Google Cloud Run、Cloud Build、Artifact Registry 或 Secret Manager。
+
+完整設定、驗收、GCP 清除與還原流程見 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。
 
 ## 文件
 
@@ -91,5 +98,5 @@ npm run build
 - [回測計算方法與限制](docs/METHODOLOGY.md)
 - [API 使用說明](docs/API.md)
 - [UI 品質標準與發版閘門](docs/UI_QUALITY.md)
-- [GitHub Pages＋Cloud Run 部署](docs/DEPLOYMENT.md)
+- [GitHub Pages＋Vercel Hobby 部署](docs/DEPLOYMENT.md)
 - [版本封存與還原](docs/RELEASES.md)
