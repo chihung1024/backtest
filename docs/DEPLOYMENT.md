@@ -1,262 +1,208 @@
-# 免費資源部署指南
+# GitHub Pages＋Vercel Hobby 部署指南
 
-目標網址：
+## 正式環境
 
 - Web：`https://chihung1024.github.io/backtest/`
-- API：`https://portfolio-backtest-api-454423251671.asia-east1.run.app`
+- API：`https://portfolio-backtest-api.vercel.app`
+- Vercel Project：`portfolio-backtest-api`
+- Vercel Team：`cchungs-projects`
+- GitHub Repository：`chihung1024/backtest`
+- Vercel Root Directory：`backend`
+- Production Branch：`main`
+- Plan：Hobby
 
-GitHub Pages 與 Actions 對公開倉庫可用免費額度；Cloud Run、Cloud Build、Artifact Registry 與 Secret Manager 仍需啟用 Google Cloud Billing，但低流量個人使用通常可落在免費額度附近。請務必在 Google Cloud 設定預算通知；「預算通知」不會自動停止服務。
+此架構不需要 Google Cloud Billing，也不需要自訂 Vercel 環境變數。
 
-目前正式環境使用 Google Cloud 專案 `backtest-465701`（專案編號
-`454423251671`）、`asia-east1` 區域與 Cloud Run 服務
-`portfolio-backtest-api`。Billing 已建立每月 TWD 150 預算，於 5%、20%、
-50% 發送實際支出通知。下列公開資源識別碼會保存在 workflow；真正金鑰只保存在
-Secret Manager。
+## 1. Vercel 後端
 
-## 1. GitHub Pages
+Vercel 已連接 GitHub repository。每次 `main` 的 `backend/**` 變更都會自動建立 production deployment。
 
-1. 合併功能分支到 `main`。
-2. 到 GitHub 倉庫 `Settings → Pages`，把 Source 設為 `GitHub Actions`。
-3. `.github/workflows/pages.yml` 會建置並發布 `frontend/dist`。
-4. `.github/workflows/pages.yml` 已設定正式 API URL；API URL 變更時修改該檔並
-   重新執行 workflow。
+後端入口：
 
-API 金鑰不要放進 `VITE_*` 變數，因為前端建置內容是公開的。第一次開站時從「資料連線」輸入金鑰，它只會存進該瀏覽器的 `localStorage`。
+```text
+backend/index.py
+```
 
-## 2. 建立 Google Cloud 專案
+Vercel 設定：
 
-正式專案已建好。需要稽核或災難復原時，先安裝並登入 `gcloud`，再設定：
+```text
+backend/vercel.json
+```
+
+FastAPI 本體仍位於：
+
+```text
+backend/app/main.py
+```
+
+### 零設定 production 行為
+
+Vercel 自動提供 `VERCEL` 與 `VERCEL_GIT_COMMIT_SHA`，程式會：
+
+- 自動將 Vercel 環境視為 production。
+- 關閉 `/api/docs`。
+- 在 `/health` 回傳目前 Git commit SHA。
+- 使用預設 CORS：`https://chihung1024.github.io` 與 `http://localhost:5173`。
+- 未設定 `BACKTEST_API_KEY` 時，只接受允許的瀏覽器 `Origin`。
+- 無 Origin 或其他來源回傳 `403`。
+- 一般 API 每 IP 每分鐘 20 次。
+- 回測 API 每 IP 每分鐘 4 次。
+
+因此不需要在 Vercel Dashboard 建立任何環境變數。
+
+### 可選私人金鑰模式
+
+日後若真的需要把 API 限定為個人金鑰，可在 Vercel 設定：
+
+```text
+BACKTEST_API_KEY=<至少 32 字元的隨機值>
+```
+
+設定後 API 會要求 `X-Backtest-Key`，前端需在「資料連線」輸入相同值。這不是目前正式架構的必要條件。
+
+## 2. GitHub Pages 前端
+
+`.github/workflows/pages.yml` 會將：
+
+```text
+VITE_API_BASE_URL=https://portfolio-backtest-api.vercel.app
+```
+
+寫入正式前端 build，再發布 `frontend/dist`。
+
+一般重新整理會回到裝置適用的空白模型；API URL、語言與佈景只保存在本機瀏覽器。
+
+## 3. CI 與 production acceptance
+
+Pull request 執行：
+
+- Python 3.12 lint／pytest／coverage
+- Node 24 lint／test／production build
+- Docker image build，作為可攜性回歸測試
+- Vercel Preview build status
+
+合併到 `main` 後，`.github/workflows/vercel-production-smoke.yml` 會：
+
+1. 等待 `/health.deployment_sha` 等於該次 `main` commit SHA。
+2. 驗證無 Origin 請求回傳 `403`。
+3. 驗證 GitHub Pages Origin 回傳 `200` 與正確 CORS header。
+4. 執行真實 `VT` 搜尋。
+5. 執行一組真實 VT／TWD 回測。
+
+只有完全相同版本通過真實驗收，才可視為 production 發布成功。
+
+## 4. 成本邊界
+
+本專案使用：
+
+- GitHub Pages：公開 repository 靜態頁面。
+- GitHub Actions：公開 repository CI／部署。
+- Vercel Hobby：個人非商業 API。
+
+不再使用：
+
+- Google Cloud Run
+- Cloud Build
+- Artifact Registry
+- Secret Manager
+- Billing Budget API
+- Workload Identity Federation
+
+Vercel Hobby 達到免費額度上限時，服務可能被限制；不會讓已移除的 Google Cloud 專案繼續按量計費。
+
+## 5. Google Cloud 清除程序
+
+正式 Vercel production 與 GitHub Pages 驗收成功後，清除舊專案 `backtest-465701`。
+
+### 5.1 先確認目前專案
 
 ```bash
 export PROJECT_ID="backtest-465701"
-export REGION="asia-east1"
-export REPO="chihung1024/backtest"
-gcloud auth login
 gcloud config set project "$PROJECT_ID"
+gcloud projects describe "$PROJECT_ID"
 ```
 
-在 Google Cloud Console 將 Billing 帳戶連到此專案，然後啟用 API：
+### 5.2 刪除 Cloud Run
 
 ```bash
-gcloud services enable \
-  run.googleapis.com \
-  cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com \
-  cloudbilling.googleapis.com \
-  billingbudgets.googleapis.com \
-  cloudresourcemanager.googleapis.com \
-  iam.googleapis.com \
-  iamcredentials.googleapis.com \
-  secretmanager.googleapis.com \
-  serviceusage.googleapis.com \
-  sts.googleapis.com
+gcloud run services delete portfolio-backtest-api \
+  --region=asia-east1 \
+  --project="$PROJECT_ID"
 ```
 
-取得專案編號：
+### 5.3 刪除 Artifact Registry
+
+先列出所有 repository：
 
 ```bash
-export PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
+gcloud artifacts repositories list --project="$PROJECT_ID"
 ```
 
-## 3. 建立專用服務帳號
+確認後逐一刪除，例如：
 
 ```bash
-gcloud iam service-accounts create backtest-deployer \
-  --display-name="GitHub deployer"
-gcloud iam service-accounts create backtest-runtime \
-  --display-name="Portfolio backtest runtime"
-
-export DEPLOY_SA="backtest-deployer@$PROJECT_ID.iam.gserviceaccount.com"
-export RUNTIME_SA="backtest-runtime@$PROJECT_ID.iam.gserviceaccount.com"
+gcloud artifacts repositories delete cloud-run-source-deploy \
+  --location=asia-east1 \
+  --project="$PROJECT_ID"
 ```
 
-部署者依 Google 的 source deploy 文件取得必要角色：
+實際名稱與 location 必須以列出結果為準。
+
+### 5.4 刪除 Secret Manager secrets
 
 ```bash
-for ROLE in roles/run.sourceDeveloper roles/serviceusage.serviceUsageConsumer; do
-  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="serviceAccount:$DEPLOY_SA" \
-    --role="$ROLE"
-done
-
-gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
-  --member="serviceAccount:$DEPLOY_SA" \
-  --role="roles/iam.serviceAccountUser"
-
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
-  --role="roles/run.builder"
+gcloud secrets delete backtest-api-key --project="$PROJECT_ID"
+gcloud secrets delete backtest-fred-api-key --project="$PROJECT_ID"
 ```
 
-IAM 變更可能需數分鐘生效。
-
-## 4. 以 Secret Manager 保存金鑰
-
-正式 API key 已建立。若需讓新瀏覽器連線，可由有權限的管理者在
-[Secret Manager](https://console.cloud.google.com/security/secret-manager/secret/backtest-api-key/versions?project=backtest-465701)
-查看最新版，或在受信任的 shell 執行：
+### 5.5 刪除服務帳號
 
 ```bash
-gcloud secrets versions access latest \
-  --secret=backtest-api-key \
-  --project=backtest-465701
+gcloud iam service-accounts delete \
+  backtest-deployer@backtest-465701.iam.gserviceaccount.com \
+  --project="$PROJECT_ID"
+
+gcloud iam service-accounts delete \
+  backtest-runtime@backtest-465701.iam.gserviceaccount.com \
+  --project="$PROJECT_ID"
 ```
 
-不要把輸出加入 GitHub、前端環境變數、畫面截圖或聊天訊息。輪替時以下指令會
-互動讀取並新增 secret 版本，避免把值直接寫入 shell 歷史：
+### 5.6 刪除 Workload Identity Pool
 
 ```bash
-read -rsp "Backtest API key: " BACKTEST_KEY; echo
-printf %s "$BACKTEST_KEY" | gcloud secrets versions add \
-  backtest-api-key --data-file=-
-unset BACKTEST_KEY
-
-read -rsp "FRED API key: " FRED_KEY; echo
-printf %s "$FRED_KEY" | gcloud secrets versions add \
-  backtest-fred-api-key --data-file=-
-unset FRED_KEY
-```
-
-`backtest-fred-api-key` 目前是 `not-configured` 預留值；核心行情與投資組合回測不受
-影響，但通膨與景氣環境分析需先申請免費 FRED API key 並新增 secret 版本。
-
-Runtime 需要讀取兩個 secret；部署者需要在部署時驗證 secret 參照：
-
-```bash
-for SECRET in backtest-api-key backtest-fred-api-key; do
-  gcloud secrets add-iam-policy-binding "$SECRET" \
-    --member="serviceAccount:$RUNTIME_SA" \
-    --role="roles/secretmanager.secretAccessor"
-  gcloud secrets add-iam-policy-binding "$SECRET" \
-    --member="serviceAccount:$DEPLOY_SA" \
-    --role="roles/secretmanager.secretAccessor"
-done
-```
-
-更新金鑰時新增版本即可，不需改 workflow：
-
-```bash
-printf %s "new-value" | gcloud secrets versions add backtest-api-key --data-file=-
-```
-
-## 5. 建立 GitHub OIDC 信任
-
-此流程不建立或下載長效 JSON 私鑰。
-
-```bash
-gcloud iam workload-identity-pools create github \
+gcloud iam workload-identity-pools delete github \
   --location=global \
-  --display-name="GitHub Actions"
-
-export WIF_POOL="$(gcloud iam workload-identity-pools describe github \
-  --location=global --format='value(name)')"
-
-gcloud iam workload-identity-pools providers create-oidc backtest \
-  --location=global \
-  --workload-identity-pool=github \
-  --display-name="chihung1024/backtest" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id,attribute.ref=assertion.ref" \
-  --attribute-condition="assertion.repository_id == '1308276686' && assertion.repository_owner_id == '104315542' && assertion.ref == 'refs/heads/main'" \
-  --issuer-uri="https://token.actions.githubusercontent.com"
-
-gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" \
-  --role=roles/iam.workloadIdentityUser \
-  --member="principalSet://iam.googleapis.com/$WIF_POOL/attribute.repository_id/1308276686"
-
-export WIF_PROVIDER="$(gcloud iam workload-identity-pools providers describe backtest \
-  --location=global \
-  --workload-identity-pool=github \
-  --format='value(name)')"
-echo "$WIF_PROVIDER"
+  --project="$PROJECT_ID"
 ```
 
-## 6. GitHub Actions 部署識別碼
+### 5.7 解除 Billing
 
-下列值已寫在 `.github/workflows/cloud-run.yml`，不需要 GitHub Actions Variables：
-
-| 名稱 | 值 |
-|---|---|
-| `GCP_PROJECT_ID` | `backtest-465701` |
-| `GCP_REGION` | `asia-east1` |
-| `GCP_CLOUD_RUN_SERVICE` | `portfolio-backtest-api` |
-| `GCP_WIF_PROVIDER` | `projects/454423251671/locations/global/workloadIdentityPools/github/providers/backtest` |
-| `GCP_DEPLOY_SERVICE_ACCOUNT` | `backtest-deployer@backtest-465701.iam.gserviceaccount.com` |
-| `GCP_RUNTIME_SERVICE_ACCOUNT` | `backtest-runtime@backtest-465701.iam.gserviceaccount.com` |
-| `GCP_API_KEY_SECRET` | `backtest-api-key` |
-| `GCP_FRED_API_KEY_SECRET` | `backtest-fred-api-key` |
-
-這些是資源識別碼，不是秘密；真正金鑰只存在 Secret Manager。
-
-## 7. 第一次部署與公開呼叫
-
-合併 backend 或 Cloud Run workflow 變更到 `main` 後會自動部署，也可在 GitHub
-Actions 手動執行 `Deploy API to Cloud Run`。服務允許公開 HTTPS 呼叫，`/health`
-不需金鑰；搜尋與回測端點仍受應用層 `X-Backtest-Key` 保護：
+這一步是停止未來 GCP 可計費服務的關鍵：
 
 ```bash
-gcloud run services add-iam-policy-binding portfolio-backtest-api \
-  --region="$REGION" \
-  --member="allUsers" \
-  --role="roles/run.invoker"
-
-gcloud run services describe portfolio-backtest-api \
-  --region="$REGION" \
-  --format='value(status.url)'
+gcloud billing projects unlink "$PROJECT_ID"
 ```
 
-驗證：
+解除前已發生的用量仍可能延遲出現在最後一張帳單。
+
+### 5.8 刪除整個 Google Cloud project
+
+在 Vercel production 穩定且資料不需保留後：
 
 ```bash
-curl "https://YOUR-SERVICE.run.app/health"
-curl -H "X-Backtest-Key: YOUR_KEY" \
-  "https://YOUR-SERVICE.run.app/api/v1/assets/search?q=VT"
+gcloud projects delete "$PROJECT_ID"
 ```
 
-## 8. 成本與維運保護
+本專案沒有在 GCP 保存使用者資料庫；程式碼與發布紀錄保存在 GitHub。
 
-- Cloud Run 已限制最多兩個執行個體、每個 512 MiB，閒置時縮到零。
-- Billing 已建立每月 TWD 150 預算與 5%、20%、50% 實際支出通知；預算不會自動停機。
-- `.github/workflows/billing-budget.yml` 會從部署帳號可存取的開放 Billing accounts 中，
-  只選取尾碼符合 `3BA9` 的唯一帳戶，再修改其中唯一符合本專案（或帳戶共用）、
-  每月 TWD 150 的預算；首次合併 workflow 或手動執行時會套用並讀回驗證
-  5%、20%、50% 三個門檻。
-- 定期查看 Cloud Run request count、錯誤率與 p95 latency。
-- 若發現異常流量，先移除 `allUsers` 的 `roles/run.invoker`，再輪替 `backtest-api-key`。
-- Artifact Registry 會保留 source deploy 映像；可設定清理政策保留最近版本以避免儲存費累積。
+## 6. 還原
 
-預算 workflow 使用既有的短效 OIDC 身分，不保存 Google 私鑰。災難復原時，帳務管理員需在
-對應 Billing account 將最小的 `Billing Account Costs Manager` 角色授予部署帳號：
+### Vercel rollback
 
-```bash
-export BILLING_ACCOUNT="$(gcloud billing projects describe "$PROJECT_ID" \
-  --format='value(billingAccountName)')"
-gcloud billing accounts add-iam-policy-binding "$BILLING_ACCOUNT" \
-  --member="serviceAccount:$DEPLOY_SA" \
-  --role="roles/billing.costsManager"
-```
+在 Vercel Dashboard 的 Deployments 選擇上一個 READY production deployment，執行 Promote／Rollback。
 
-## 常見問題
+### GitHub 還原
 
-### OIDC 顯示 403
+使用 Git tag／Release 或 revert merge commit。Vercel 與 GitHub Pages 會依新的 `main` 自動重新部署。
 
-確認 workflow 由 `chihung1024/backtest` 的 `main` 分支執行、WIF provider 使用專案
-編號而非專案 ID，且 `cloudbilling.googleapis.com` 與
-`billingbudgets.googleapis.com` 均已啟用。帳務帳戶需把
-`roles/billing.costsManager` 授予部署帳號，變更後等待 IAM 傳播至少五分鐘。
-OIDC 條件刻意使用不可重新命名的 repository／owner 數字 ID，避免同名 repository 被冒用。
-
-### Pages 可開啟但顯示未連線
-
-確認 workflow 內的 `VITE_API_BASE_URL` 正確後重新建置 Pages；也可直接在網站的
-「資料連線」覆寫 URL。API key 必須由使用者在瀏覽器輸入。
-
-全新 repository 第一次發布前，owner 必須到 `Settings → Pages`，將
-`Build and deployment → Source` 設為 `GitHub Actions`。這是 GitHub 的一次性
-管理權限要求；一般 workflow token 即使具備 `pages: write` 也可能無法建立
-Pages site。完成後，後續建置與發布都由 workflow 自動執行。
-
-### Yahoo Finance 暫時失敗
-
-稍後重試，確認代碼與日期有效。這個服務刻意不以付費資料源自動兜底，以免產生未預期成本。
-容器映像會一併安裝 yfinance `repair=True` 所需的 SciPy，並為非 root runtime
-預先建立可寫入的 `/tmp/.cache/py-yfinance`；不要在精簡映像中移除這兩項設定。
+不應重新啟用已刪除的 Cloud Run workflow；除非重新評估並接受 Google Cloud Billing。
