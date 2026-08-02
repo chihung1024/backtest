@@ -35,7 +35,7 @@ jobs:
         run: npm ci
       - name: Build static site
         env:
-          VITE_API_BASE_URL: https://portfolio-backtest-api-454423251671.asia-east1.run.app
+          VITE_API_BASE_URL: https://portfolio-backtest-api.vercel.app
         run: npm run build
       - uses: actions/upload-pages-artifact@v5
         with:
