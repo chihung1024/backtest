@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import secrets
 import time
 from collections import defaultdict, deque
@@ -136,7 +137,11 @@ def root() -> dict[str, str]:
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "version": __version__}
+    return {
+        "status": "ok",
+        "version": __version__,
+        "deployment_sha": os.getenv("VERCEL_GIT_COMMIT_SHA", ""),
+    }
 
 
 @app.get("/api/v1/auth/check", dependencies=[Depends(authorize)])
