@@ -30,7 +30,7 @@ docs/       架構、計算方法、API 與部署手冊
 .github/    CI、GitHub Pages、Vercel production acceptance
 ```
 
-正式環境不需要自訂環境變數：
+正式環境**完全不需要自訂環境變數**：
 
 - Vercel 會自動被辨識為 production。
 - CORS 預設只允許本機與 `https://chihung1024.github.io`。
