@@ -1,0 +1,268 @@
+name: GCP teardown
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/gcp-teardown.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  id-token: write
+
+concurrency:
+  group: gcp-teardown
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: backtest-465701
+  GCP_PROJECT_NUMBER: "454423251671"
+  GCP_WIF_PROVIDER: projects/454423251671/locations/global/workloadIdentityPools/github/providers/backtest
+  GCP_DEPLOY_SERVICE_ACCOUNT: backtest-deployer@backtest-465701.iam.gserviceaccount.com
+  VERCEL_API_URL: https://portfolio-backtest-api.vercel.app
+
+jobs:
+  teardown:
+    name: Remove legacy billable GCP resources
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production-api
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verify Vercel replacement is healthy
+        shell: bash
+        run: |
+          set -euo pipefail
+          health="$(curl --fail --silent --show-error --retry 6 --retry-delay 5 "$VERCEL_API_URL/health")"
+          python - "$health" <<'PY'
+          import json
+          import sys
+
+          payload = json.loads(sys.argv[1])
+          assert payload.get("status") == "ok", payload
+          assert payload.get("deployment_sha"), payload
+          print("Vercel replacement is healthy:", payload["deployment_sha"])
+          PY
+
+      - name: Authenticate with short-lived GitHub OIDC
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Execute best-effort teardown
+        shell: bash
+        run: |
+          set -u
+          mkdir -p gcp-teardown
+          : > gcp-teardown/status.tsv
+
+          capture() {
+            local name="$1"
+            shift
+            set +e
+            "$@" > "gcp-teardown/${name}.stdout" 2> "gcp-teardown/${name}.stderr"
+            local status=$?
+            set -e
+            printf '%s\t%s\n' "$name" "$status" | tee -a gcp-teardown/status.tsv
+            return 0
+          }
+
+          capture before-project gcloud projects describe "$GCP_PROJECT_ID" --format=json
+          capture before-billing gcloud billing projects describe "$GCP_PROJECT_ID" --format=json
+          capture before-cloud-run gcloud run services list --platform=managed --project="$GCP_PROJECT_ID" --format=json
+          capture before-artifacts gcloud artifacts repositories list --location=all --project="$GCP_PROJECT_ID" --format=json
+          capture before-secrets gcloud secrets list --project="$GCP_PROJECT_ID" --format=json
+          capture before-buckets gcloud storage buckets list --project="$GCP_PROJECT_ID" --format=json
+
+          capture delete-cloud-run \
+            gcloud run services delete portfolio-backtest-api \
+              --region=asia-east1 \
+              --project="$GCP_PROJECT_ID" \
+              --quiet
+
+          capture delete-artifact-repository \
+            gcloud artifacts repositories delete cloud-run-source-deploy \
+              --location=asia-east1 \
+              --project="$GCP_PROJECT_ID" \
+              --quiet
+
+          mapfile -t source_buckets < <(
+            gcloud storage buckets list \
+              --project="$GCP_PROJECT_ID" \
+              --format='value(name)' 2>/dev/null \
+              | grep -E '^gs://run-sources-backtest-465701-' || true
+          )
+          if [[ "${#source_buckets[@]}" -eq 0 ]]; then
+            printf '%s\t%s\n' delete-source-buckets 0 | tee -a gcp-teardown/status.tsv
+            echo 'No matching Cloud Run source bucket was visible.' > gcp-teardown/delete-source-buckets.stdout
+            : > gcp-teardown/delete-source-buckets.stderr
+          else
+            for bucket in "${source_buckets[@]}"; do
+              safe_name="$(printf '%s' "$bucket" | tr -c 'A-Za-z0-9._-' '_')"
+              capture "empty-source-bucket-${safe_name}" \
+                gcloud storage rm --recursive "${bucket}/**"
+              capture "delete-source-bucket-${safe_name}" \
+                gcloud storage buckets delete "$bucket" --quiet
+            done
+          fi
+
+          capture delete-secret-api-key \
+            gcloud secrets delete backtest-api-key \
+              --project="$GCP_PROJECT_ID" \
+              --quiet
+          capture delete-secret-fred-key \
+            gcloud secrets delete backtest-fred-api-key \
+              --project="$GCP_PROJECT_ID" \
+              --quiet
+
+          capture unlink-billing \
+            gcloud billing projects unlink "$GCP_PROJECT_ID" \
+              --quiet
+
+          capture delete-project \
+            gcloud projects delete "$GCP_PROJECT_ID" \
+              --quiet
+
+          sleep 10
+          capture after-project gcloud projects describe "$GCP_PROJECT_ID" --format=json
+          capture after-billing gcloud billing projects describe "$GCP_PROJECT_ID" --format=json
+          capture after-cloud-run gcloud run services list --platform=managed --project="$GCP_PROJECT_ID" --format=json
+          capture after-artifacts gcloud artifacts repositories list --location=all --project="$GCP_PROJECT_ID" --format=json
+          capture after-secrets gcloud secrets list --project="$GCP_PROJECT_ID" --format=json
+
+      - name: Build sanitized teardown report
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path("gcp-teardown")
+          root.mkdir(exist_ok=True)
+          status_path = root / "status.tsv"
+          statuses: list[tuple[str, int]] = []
+          if status_path.exists():
+              for line in status_path.read_text(errors="replace").splitlines():
+                  if not line.strip() or "\t" not in line:
+                      continue
+                  name, code = line.split("\t", 1)
+                  try:
+                      statuses.append((name, int(code)))
+                  except ValueError:
+                      statuses.append((name, 999))
+
+          def load_stdout(name: str):
+              path = root / f"{name}.stdout"
+              if not path.exists() or not path.read_text(errors="replace").strip():
+                  return None
+              try:
+                  return json.loads(path.read_text(errors="replace"))
+              except json.JSONDecodeError:
+                  return None
+
+          before_artifacts = load_stdout("before-artifacts") or []
+          before_run = load_stdout("before-cloud-run") or []
+          before_secrets = load_stdout("before-secrets") or []
+          after_project = load_stdout("after-project") or {}
+          after_billing = load_stdout("after-billing") or {}
+          after_artifacts = load_stdout("after-artifacts")
+          after_run = load_stdout("after-cloud-run")
+          after_secrets = load_stdout("after-secrets")
+
+          artifact_bytes = sum(int(item.get("sizeBytes", 0) or 0) for item in before_artifacts)
+          lines = [
+              "# GCP teardown result",
+              "",
+              "One-time cleanup for `backtest-465701` after production migration to Vercel Hobby.",
+              "",
+              f"- Source commit: `{os.environ.get('GITHUB_SHA', '')}`",
+              f"- Workflow run: {os.environ.get('GITHUB_SERVER_URL', '')}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ.get('GITHUB_RUN_ID', '')}",
+              f"- Cloud Run services before: `{len(before_run)}`",
+              f"- Artifact Registry bytes before: `{artifact_bytes}`",
+              f"- Secrets before: `{len(before_secrets)}`",
+              "",
+              "## Command results",
+              "",
+              "| Command | Exit code |",
+              "|---|---:|",
+          ]
+          lines.extend(f"| `{name}` | {code} |" for name, code in statuses)
+
+          lines += ["", "## Observed post-state", ""]
+          if after_project:
+              lines.append(
+                  f"- Project lifecycle: `{after_project.get('lifecycleState', 'unknown')}`"
+              )
+          else:
+              lines.append("- Project could no longer be described, or the identity lost access.")
+          if after_billing:
+              lines.append(
+                  f"- Billing enabled: `{after_billing.get('billingEnabled', 'unknown')}`"
+              )
+          else:
+              lines.append("- Billing state could no longer be described.")
+          if isinstance(after_run, list):
+              lines.append(f"- Remaining Cloud Run services visible: `{len(after_run)}`")
+          if isinstance(after_artifacts, list):
+              lines.append(f"- Remaining Artifact Registry repositories visible: `{len(after_artifacts)}`")
+          if isinstance(after_secrets, list):
+              lines.append(f"- Remaining secrets visible: `{len(after_secrets)}`")
+
+          failures = [(name, code) for name, code in statuses if code != 0 and not name.startswith("after-")]
+          lines += ["", "## Outcome", ""]
+          if not failures:
+              lines.append("All requested teardown commands returned exit code 0.")
+          else:
+              lines.append("Some teardown commands need additional IAM permission or manual completion:")
+              for name, code in failures:
+                  lines.append(f"- `{name}`: exit `{code}`")
+
+          if failures:
+              lines += ["", "## Error excerpts", ""]
+              for name, _ in failures:
+                  path = root / f"{name}.stderr"
+                  text = path.read_text(errors="replace").strip() if path.exists() else ""
+                  text = text[:1200].replace("`", "'")
+                  lines += [f"### {name}", "", f"```text\n{text}\n```"]
+
+          (root / "issue.md").write_text("\n".join(lines) + "\n")
+          PY
+
+      - name: Publish sanitized teardown issue
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          title='[automation] GCP teardown result'
+          issue_number="$(gh issue list --state all --search "${title} in:title" --json number,title --jq '.[] | select(.title == "[automation] GCP teardown result") | .number' | head -n1)"
+          if [[ -n "$issue_number" ]]; then
+            gh issue edit "$issue_number" --title "$title" --body-file gcp-teardown/issue.md
+            gh issue reopen "$issue_number" || true
+          else
+            gh issue create --title "$title" --body-file gcp-teardown/issue.md
+          fi
+
+      - name: Upload teardown evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcp-teardown-evidence
+          path: gcp-teardown
+          retention-days: 30
+          if-no-files-found: error
