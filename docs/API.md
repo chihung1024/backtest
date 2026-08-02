@@ -1,6 +1,6 @@
 # API 使用說明
 
-本機開發模式可在 `http://localhost:8000/api/docs` 使用互動式 OpenAPI 文件。正式環境預設關閉文件頁面，但端點與資料模型相同。
+本機開發模式可在 `http://localhost:8000/api/docs` 使用互動式 OpenAPI 文件。Vercel 正式環境會自動視為 production 並關閉文件頁面，但端點與資料模型相同。
 
 ## 健康檢查
 
@@ -8,22 +8,59 @@
 GET /health
 ```
 
-不需要金鑰，Cloud Run 與前端用它檢查服務狀態。
+不需要金鑰，回傳：
 
-## 驗證個人金鑰
+```json
+{
+  "status": "ok",
+  "version": "0.6.6",
+  "deployment_sha": "Vercel 對應的 Git commit SHA"
+}
+```
+
+`deployment_sha` 供 GitHub Actions 確認 production 已經部署到完全相同的版本；本機執行時可為空字串。
+
+## 存取模式
+
+### 零設定模式（正式預設）
+
+未設定 `BACKTEST_API_KEY` 時，所有 `/api/v1/*` 請求必須帶有允許清單中的瀏覽器 `Origin`：
 
 ```http
-GET /api/v1/auth/check
+Origin: https://chihung1024.github.io
+```
+
+預設允許：
+
+- `https://chihung1024.github.io`
+- `http://localhost:5173`
+
+無 Origin 或其他來源會回傳 `403`。這個模式不需要使用者設定 Vercel 環境變數。
+
+### 私人金鑰模式（可選）
+
+若日後在執行環境設定 `BACKTEST_API_KEY`，API 會改以以下 header 驗證：
+
+```http
 X-Backtest-Key: your-personal-key
 ```
 
-前端的連線狀態與「測試連線」會先檢查健康端點，再以此端點確認金鑰有效。
+金鑰錯誤回傳 `401`。
+
+## 驗證連線
+
+```http
+GET /api/v1/auth/check
+Origin: https://chihung1024.github.io
+```
+
+前端的連線狀態會先檢查 `/health`，再呼叫此端點。
 
 ## 搜尋標的
 
 ```http
 GET /api/v1/assets/search?q=2330&limit=8
-X-Backtest-Key: your-personal-key
+Origin: https://chihung1024.github.io
 ```
 
 純數字台股會優先提供 `.TW` 與 `.TWO` 候選，再合併 Yahoo Finance 搜尋結果。
@@ -33,7 +70,7 @@ X-Backtest-Key: your-personal-key
 ```http
 POST /api/v1/backtests
 Content-Type: application/json
-X-Backtest-Key: your-personal-key
+Origin: https://chihung1024.github.io
 ```
 
 最小請求：
@@ -59,17 +96,11 @@ X-Backtest-Key: your-personal-key
 
 送至 API 的每組投資組合權重須合計為 100%，容許 0.05 個百分點的浮點誤差。前端會忽略空白或 0% 的組合。單次最多五組投資組合、每組二十個資產；伺服器另限制所有唯一代碼合計不超過 64 個。
 
-`base_currency` 可省略，預設且只接受 `TWD`；傳入其他幣別會回傳 `422`，避免前端或
-舊客戶端意外產生非台幣結果。`output_frequency` 預設為 `daily`，也可選 `weekly` 或
-`monthly` 以縮減曲線資料量；這個欄位只影響 `series` 的呈現點位，績效與風險指標
-仍以完整每日序列計算。
+`base_currency` 可省略，預設且只接受 `TWD`；傳入其他幣別會回傳 `422`。`output_frequency` 預設為 `daily`，也可選 `weekly` 或 `monthly` 以縮減曲線資料量；這個欄位只影響 `series` 的呈現點位，績效與風險指標仍以完整每日序列計算。
 
-回應頂層 `base_currency` 固定為 `TWD`，所有金額與績效序列均已逐日換算為台幣。
-`assets[].currency` 是 Yahoo 回傳的標的原始報價幣別，讓使用者能稽核換算來源。
-每個 `results[]` 會同時回傳原始 `name`、統一供介面與 CSV 使用的 `display_name`、
-回測設定的 `target_allocation` 與期末漂移後的 `final_allocation`。`display_name` 依
-`target_allocation` 由大到小列出最多三個標的及比例；基準名稱則維持
-`Benchmark · TICKER`，避免重複標示。
+回應頂層 `base_currency` 固定為 `TWD`，所有金額與績效序列均已逐日換算為台幣。`assets[].currency` 是 Yahoo 回傳的標的原始報價幣別，讓使用者能稽核換算來源。
+
+每個 `results[]` 會同時回傳原始 `name`、統一供介面與 CSV 使用的 `display_name`、回測設定的 `target_allocation` 與期末漂移後的 `final_allocation`。`display_name` 依 `target_allocation` 由大到小列出最多三個標的及比例；基準名稱維持 `Benchmark · TICKER`。
 
 `assets` 除了有效日期、原始報價幣別與觀察值數量，也包含企業行動稽核欄位：
 
@@ -81,11 +112,15 @@ X-Backtest-Key: your-personal-key
 | `repaired_observations` | yfinance `repair=True` 修復的價格列數 |
 | `split_corrections` | 本站偵測並修正的殘留拆股跳變數 |
 
-這些欄位屬於資料處理稽核；已自動完成的修復不會被呈現為錯誤，也不會中斷回測。
+## 速率限制
+
+- 一般 `/api/v1/*`：每來源 IP 每分鐘 20 次。
+- `POST /api/v1/backtests`：每來源 IP 每分鐘 4 次。
 
 ## 錯誤格式
 
-- `401`：存取金鑰錯誤。
+- `401`：已啟用私人金鑰模式且金鑰錯誤。
+- `403`：零設定模式下沒有允許的瀏覽器 Origin。
 - `422`：模型、權重、日期或資料不可用。
 - `429`：超過每分鐘速率限制。
 - `502`：上游 Yahoo Finance 暫時失敗。
