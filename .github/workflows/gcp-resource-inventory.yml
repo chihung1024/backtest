@@ -1,0 +1,94 @@
+name: GCP resource inventory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/gcp-resource-inventory.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gcp-resource-inventory
+  cancel-in-progress: false
+
+env:
+  GCP_PROJECT_ID: backtest-465701
+  GCP_WIF_PROVIDER: projects/454423251671/locations/global/workloadIdentityPools/github/providers/backtest
+  GCP_DEPLOY_SERVICE_ACCOUNT: backtest-deployer@backtest-465701.iam.gserviceaccount.com
+
+jobs:
+  inventory:
+    name: Read-only GCP inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production-api
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Authenticate with short-lived GitHub OIDC
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.GCP_WIF_PROVIDER }}
+          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Install Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Collect read-only inventory
+        shell: bash
+        run: |
+          set -u
+          mkdir -p gcp-inventory
+          : > gcp-inventory/status.tsv
+
+          capture() {
+            local name="$1"
+            shift
+            set +e
+            "$@" > "gcp-inventory/${name}.json" 2> "gcp-inventory/${name}.stderr"
+            local status=$?
+            set -e
+            printf '%s\t%s\n' "$name" "$status" | tee -a gcp-inventory/status.tsv
+            if [[ -s "gcp-inventory/${name}.stderr" ]]; then
+              {
+                echo "### ${name} (exit ${status})"
+                echo '```text'
+                sed -n '1,30p' "gcp-inventory/${name}.stderr"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+          }
+
+          capture project gcloud projects describe "$GCP_PROJECT_ID" --format=json
+          capture billing gcloud billing projects describe "$GCP_PROJECT_ID" --format=json
+          capture enabled-services gcloud services list --enabled --project="$GCP_PROJECT_ID" --format=json
+          capture cloud-run gcloud run services list --platform=managed --project="$GCP_PROJECT_ID" --format=json
+          capture artifact-repositories gcloud artifacts repositories list --location=all --project="$GCP_PROJECT_ID" --format=json
+          capture secrets gcloud secrets list --project="$GCP_PROJECT_ID" --format=json
+          capture service-accounts gcloud iam service-accounts list --project="$GCP_PROJECT_ID" --format=json
+          capture workload-identity-pools gcloud iam workload-identity-pools list --location=global --project="$GCP_PROJECT_ID" --format=json
+
+          {
+            echo "## GCP inventory status"
+            echo
+            echo '| Resource | Exit code |'
+            echo '|---|---:|'
+            while IFS=$'\t' read -r name status; do
+              echo "| $name | $status |"
+            done < gcp-inventory/status.tsv
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload inventory artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcp-resource-inventory
+          path: gcp-inventory
+          retention-days: 7
+          if-no-files-found: error
