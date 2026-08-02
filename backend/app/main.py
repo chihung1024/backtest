@@ -37,7 +37,7 @@ app.add_middleware(
 
 
 class MinuteRateLimiter:
-    def __init__(self, limit: int = 30) -> None:
+    def __init__(self, limit: int) -> None:
         self.limit = limit
         self.requests: dict[str, deque[float]] = defaultdict(deque)
         self.last_cleanup = time.monotonic()
@@ -62,7 +62,8 @@ class MinuteRateLimiter:
         return True
 
 
-rate_limiter = MinuteRateLimiter()
+api_rate_limiter = MinuteRateLimiter(limit=20)
+backtest_rate_limiter = MinuteRateLimiter(limit=4)
 
 
 @app.middleware("http")
@@ -71,15 +72,26 @@ async def security_and_rate_limit(request: Request, call_next: Any) -> Any:
         forwarded = request.headers.get("x-forwarded-for", "")
         fallback = request.client.host if request.client else "unknown"
         client_key = forwarded.split(",")[0].strip() or fallback
-        if not rate_limiter.allow(client_key):
+        if not api_rate_limiter.allow(client_key):
             return JSONResponse(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 content={"detail": "Rate limit exceeded. Try again in one minute."},
+            )
+        if (
+            request.method == "POST"
+            and request.url.path == "/api/v1/backtests"
+            and not backtest_rate_limiter.allow(client_key)
+        ):
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={"detail": "Backtest rate limit exceeded. Try again in one minute."},
             )
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if request.url.path.startswith("/api/v1/"):
+        response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -87,14 +99,26 @@ SettingsDependency = Annotated[Settings, Depends(get_settings)]
 
 
 def authorize(
+    request: Request,
     current_settings: SettingsDependency,
     x_backtest_key: Annotated[str | None, Header()] = None,
 ) -> None:
-    if current_settings.api_key and (
-        x_backtest_key is None
-        or not secrets.compare_digest(x_backtest_key, current_settings.api_key)
-    ):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid access key")
+    if current_settings.api_key:
+        if x_backtest_key is None or not secrets.compare_digest(
+            x_backtest_key, current_settings.api_key
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access key",
+            )
+        return
+
+    origin = (request.headers.get("origin") or "").strip().rstrip("/")
+    if origin not in current_settings.cors_origin_list:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Browser origin is not allowed",
+        )
 
 
 @lru_cache
