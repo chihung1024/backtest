@@ -48,6 +48,48 @@ async def test_health_endpoint() -> None:
 
 
 @pytest.mark.asyncio
+async def test_zero_config_mode_rejects_requests_without_browser_origin() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(api_key=None)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/api/v1/auth/check")
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Browser origin is not allowed"
+
+
+@pytest.mark.asyncio
+async def test_zero_config_mode_accepts_configured_browser_origin() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(api_key=None)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/api/v1/auth/check",
+            headers={"Origin": "https://chihung1024.github.io"},
+        )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://chihung1024.github.io"
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_zero_config_mode_rejects_unconfigured_browser_origin() -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(api_key=None)
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.get(
+            "/api/v1/auth/check",
+            headers={"Origin": "https://example.com"},
+        )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_backtest_endpoint_requires_configured_access_key() -> None:
     app.dependency_overrides[get_settings] = lambda: Settings(api_key="test-secret")
     async with AsyncClient(
