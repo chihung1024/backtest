@@ -36,7 +36,8 @@ flowchart LR
 
 - GitHub Pages 是公開靜態網站，不包含秘密。
 - Vercel production 自動視為 production，正式環境關閉 OpenAPI 文件。
-- 預設不需要環境變數；未設定 `BACKTEST_API_KEY` 時，`/api/v1/*` 只接受允許清單中的瀏覽器 `Origin`。
+- 正式部署完全不需要自訂環境變數。
+- 未設定 `BACKTEST_API_KEY` 時，`/api/v1/*` 只接受允許清單中的瀏覽器 `Origin`。
 - 預設允許 `http://localhost:5173` 與 `https://chihung1024.github.io`；無 Origin 或其他來源回傳 `403`。
 - 若日後設定 `BACKTEST_API_KEY`，API 會改以 `X-Backtest-Key` 驗證，保留私人模式相容性。
 - 一般 API 每來源 IP 每分鐘 20 次，回測端點另外限制每分鐘 4 次；多執行個體時限制各自計算。
