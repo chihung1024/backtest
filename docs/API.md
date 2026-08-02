@@ -24,7 +24,7 @@ GET /health
 
 ### 零設定模式（正式預設）
 
-未設定 `BACKTEST_API_KEY` 時，所有 `/api/v1/*` 請求必須帶有允許清單中的瀏覽器 `Origin`：
+正式部署完全不需要新增 Vercel 自訂環境變數。未設定 `BACKTEST_API_KEY` 時，所有 `/api/v1/*` 請求必須帶有允許清單中的瀏覽器 `Origin`：
 
 ```http
 Origin: https://chihung1024.github.io
@@ -35,7 +35,7 @@ Origin: https://chihung1024.github.io
 - `https://chihung1024.github.io`
 - `http://localhost:5173`
 
-無 Origin 或其他來源會回傳 `403`。這個模式不需要使用者設定 Vercel 環境變數。
+無 Origin 或其他來源會回傳 `403`。
 
 ### 私人金鑰模式（可選）
 
