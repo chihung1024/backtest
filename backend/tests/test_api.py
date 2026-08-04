@@ -157,3 +157,38 @@ async def test_backtest_endpoint_returns_calculated_response() -> None:
     assert body["assets"][0]["capital_gain_events"] == 0
     assert body["results"][0]["metrics"]["final_balance"] > 0
     assert len(body["results"][0]["series"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_retirement_mode_returns_gone_for_every_legacy_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FORCE_LEGACY_RETIREMENT", "1")
+    requests = [
+        ("GET", "/", None),
+        ("GET", "/health", None),
+        ("GET", "/api/v1/auth/check", None),
+        ("GET", "/api/v1/assets/search?q=VT&limit=5", None),
+        ("POST", "/api/v1/backtests", {}),
+    ]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        responses = [
+            await client.request(method, path, json=payload)
+            for method, path, payload in requests
+        ]
+
+    for response in responses:
+        assert response.status_code == 410
+        assert response.json()["status"] == "retired"
+        assert response.json()["code"] == "legacy_project_retired"
+        assert response.json()["replacement_url"] == (
+            "https://backteststock.chired.workers.dev/portfolio/"
+        )
+        assert response.headers["location"] == (
+            "https://backteststock.chired.workers.dev/portfolio/"
+        )
+        assert response.headers["cache-control"] == "no-store"
