@@ -1,280 +1,67 @@
-import { AlertCircle, ArrowRight, Beaker, Check, LoaderCircle } from "lucide-react";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { checkHealth, runBacktest } from "./api";
-import { AssetsTab } from "./components/AssetsTab";
-import { ConnectionDialog } from "./components/ConnectionDialog";
-import { Header } from "./components/Header";
-import { SettingsTab } from "./components/SettingsTab";
-import { freshDefaultState } from "./defaults";
-import { translator } from "./i18n";
-import {
-  createShareUrl,
-  loadConnection,
-  loadLocale,
-  loadModel,
-  loadTheme,
-  saveConnection,
-  saveLocale,
-  saveTheme,
-} from "./storage";
-import type { ApiConnection, BacktestResponse, Locale, Theme } from "./types";
-import { buildRequest, validateModel } from "./utils";
-
-type ConfigurationTab = "settings" | "assets";
-
-const configurationTabs: ConfigurationTab[] = ["settings", "assets"];
-
-const ResultsDashboard = lazy(() =>
-  import("./components/ResultsDashboard").then((module) => ({
-    default: module.ResultsDashboard,
-  })),
-);
+const NEW_PORTFOLIO_URL = "https://backteststock.chired.workers.dev/portfolio/";
+const NEW_REPOSITORY_URL = "https://github.com/chihung1024/backteststock";
 
 export default function App() {
-  const [model, setModel] = useState(loadModel);
-  const [connection, setConnection] = useState<ApiConnection>(loadConnection);
-  const [locale, setLocale] = useState<Locale>(loadLocale);
-  const [theme, setTheme] = useState<Theme>(loadTheme);
-  const [tab, setTab] = useState<ConfigurationTab>("settings");
-  const [connectionOpen, setConnectionOpen] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [response, setResponse] = useState<BacktestResponse | null>(null);
-  const [toast, setToast] = useState("");
-  const resultRef = useRef<HTMLDivElement>(null);
-  const t = translator(locale);
-  const activeRequest = buildRequest(model);
-  const activeAssetCount = new Set(
-    activeRequest.portfolios.flatMap((portfolio) => portfolio.assets.map((asset) => asset.symbol)),
-  ).size;
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    saveTheme(theme);
-  }, [theme]);
-
-  useEffect(() => {
-    document.documentElement.lang = locale === "zh-TW" ? "zh-Hant" : "en";
-    saveLocale(locale);
-  }, [locale]);
-
-  useEffect(() => {
-    let active = true;
-    void checkHealth(connection)
-      .then((ok) => active && setConnected(ok))
-      .catch(() => active && setConnected(false));
-    return () => { active = false; };
-  }, [connection]);
-
-  async function submit() {
-    const validation = validateModel(model);
-    if (validation.length) {
-      setErrors(validation);
-      setTab(validation.some((error) => error.includes("權重") || error.includes("投資組合")) ? "assets" : "settings");
-      return;
-    }
-    setLoading(true);
-    setErrors([]);
-    try {
-      const next = await runBacktest(connection, buildRequest(model));
-      setResponse(next);
-      window.setTimeout(() => resultRef.current?.scrollIntoView({
-        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-        block: "start",
-      }), 50);
-      setConnected(true);
-    } catch (error) {
-      setErrors([error instanceof Error ? error.message : String(error)]);
-      if (String(error).toLowerCase().includes("access key")) setConnectionOpen(true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function share() {
-    try {
-      await navigator.clipboard.writeText(createShareUrl(model));
-      flash(t("shared"));
-    } catch {
-      flash(createShareUrl(model));
-    }
-  }
-
-  function flash(message: string) {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 2800);
-  }
-
-  function updateConnection(next: ApiConnection) {
-    const clean = { ...next, baseUrl: next.baseUrl.trim().replace(/\/$/, "") };
-    setConnection(clean);
-    saveConnection(clean);
-  }
-
-  function moveConfigurationTab(
-    event: React.KeyboardEvent<HTMLButtonElement>,
-    currentTab: ConfigurationTab,
-  ) {
-    const currentIndex = configurationTabs.indexOf(currentTab);
-    let nextIndex: number;
-    if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % configurationTabs.length;
-    else if (event.key === "ArrowLeft") nextIndex = (currentIndex - 1 + configurationTabs.length) % configurationTabs.length;
-    else if (event.key === "Home") nextIndex = 0;
-    else if (event.key === "End") nextIndex = configurationTabs.length - 1;
-    else return;
-
-    event.preventDefault();
-    const nextTab = configurationTabs[nextIndex];
-    setTab(nextTab);
-    document.getElementById(`configuration-${nextTab}-tab`)?.focus();
-  }
-
   return (
-    <div className="app-shell">
-      <Header
-        t={t}
-        locale={locale}
-        theme={theme}
-        connected={connected}
-        onLocale={() => setLocale((current) => current === "zh-TW" ? "en" : "zh-TW")}
-        onTheme={() => setTheme((current) => current === "dark" ? "light" : "dark")}
-        onConnection={() => setConnectionOpen(true)}
-        onShare={() => void share()}
-        onReset={() => {
-          window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-          setModel(freshDefaultState());
-          setResponse(null);
-          setErrors([]);
-          setTab("settings");
-        }}
-      />
+    <div className="retirement-shell">
+      <header className="retirement-header">
+        <a className="retirement-brand" href={NEW_PORTFOLIO_URL}>
+          <span className="retirement-mark" aria-hidden="true">B</span>
+          <span>
+            <strong>Portfolio Backtest Lab</strong>
+            <small>Legacy project retirement</small>
+          </span>
+        </a>
+      </header>
 
-      <main>
-        <section className="hero">
-          <div className="hero__copy">
-            <span className="eyebrow"><Beaker size={14} /> Portfolio Performance</span>
-            <h1>{t("appName")}</h1>
-            <p>{t("appTagline")}</p>
-          </div>
-          <div className="hero__facts" aria-label="Capabilities">
-            <div><strong>5</strong><span>Portfolios</span></div>
-            <div><strong>20</strong><span>Assets each</span></div>
-            <div><strong>TWD · Daily</strong><span>Global valuation</span></div>
-          </div>
-        </section>
+      <main id="main-content" className="retirement-main">
+        <section className="retirement-card" aria-labelledby="retirement-title">
+          <p className="retirement-status">此舊專案已完成整合</p>
+          <h1 id="retirement-title">投資組合回測已移至 BacktestStock</h1>
+          <p className="retirement-lead">
+            原 Portfolio Backtest Lab 的配置、現金流、再平衡、槓桿、進階分析、資料稽核、分享與匯出功能，
+            已完整整合至單一獨立的 Portfolio Research 專頁。
+          </p>
 
-        <section className="configuration-card" aria-labelledby="configuration-title">
-          <div className="configuration-card__title">
-            <div>
-              <span className="eyebrow">Model configuration</span>
-              <h2 id="configuration-title">Portfolio Model Configuration</h2>
-            </div>
-            <span className="research-badge"><Check size={14} />{t("personalResearch")}</span>
+          <div className="retirement-actions">
+            <a className="retirement-primary" href={NEW_PORTFOLIO_URL}>
+              前往新的投資組合研究專頁
+            </a>
+            <a className="retirement-secondary" href={NEW_REPOSITORY_URL}>
+              查看整合後原始碼
+            </a>
           </div>
 
-          <div className="configuration-tabs" role="tablist" aria-label="Portfolio Model Configuration">
-            <button
-              id="configuration-settings-tab"
-              type="button"
-              role="tab"
-              aria-controls="configuration-panel"
-              aria-selected={tab === "settings"}
-              tabIndex={tab === "settings" ? 0 : -1}
-              className={tab === "settings" ? "active" : ""}
-              onClick={() => setTab("settings")}
-              onKeyDown={(event) => moveConfigurationTab(event, "settings")}
-            >
-              <span className="tab-step">01</span><span className="tab-label">{t("settings")}</span>
-            </button>
-            <button
-              id="configuration-assets-tab"
-              type="button"
-              role="tab"
-              aria-controls="configuration-panel"
-              aria-selected={tab === "assets"}
-              tabIndex={tab === "assets" ? 0 : -1}
-              className={tab === "assets" ? "active" : ""}
-              onClick={() => setTab("assets")}
-              onKeyDown={(event) => moveConfigurationTab(event, "assets")}
-            >
-              <span className="tab-step">02</span><span className="tab-label">{t("assets")}</span>
-            </button>
+          <div className="retirement-grid" aria-label="遷移內容">
+            <article>
+              <span>新正式路徑</span>
+              <strong>/portfolio/</strong>
+              <p>可直接開啟、重新整理與分享，不再使用彈出視窗。</p>
+            </article>
+            <article>
+              <span>正式 API</span>
+              <strong>/api/v3/portfolio/*</strong>
+              <p>由 BacktestStock 自有 Portfolio Ledger、TWD 估值與資料稽核契約提供。</p>
+            </article>
+            <article>
+              <span>舊專案狀態</span>
+              <strong>停止提供回測服務</strong>
+              <p>舊網址僅保留遷移說明；舊 API 端點會回傳 410 Gone。</p>
+            </article>
           </div>
 
-          <div
-            id="configuration-panel"
-            className="configuration-body"
-            role="tabpanel"
-            aria-labelledby={`configuration-${tab}-tab`}
-          >
-            {tab === "settings" ? (
-              <SettingsTab model={model} setModel={setModel} t={t} />
-            ) : (
-              <AssetsTab model={model} setModel={setModel} connection={connection} t={t} />
-            )}
-          </div>
-
-          {errors.length > 0 && (
-            <div className="error-panel" role="alert">
-              <AlertCircle size={19} />
-              <div><strong>{t("reviewErrors")}</strong><ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul></div>
-            </div>
-          )}
-
-          <div className="run-bar">
+          <aside className="retirement-note" aria-labelledby="bookmark-title">
+            <h2 id="bookmark-title">請更新書籤</h2>
             <p>
-              {loading
-                ? t("apiWakeHint")
-                : `${activeRequest.portfolios.length} ${t("portfolio")} · ${activeAssetCount} ${t("asset")} · ${model.baseCurrency}`}
+              舊分享網址與瀏覽器內的舊版設定不會自動傳送到新站。請在確認新模型後，重新建立分享網址或匯入模型 JSON。
             </p>
-            <button type="button" className="button button--run" onClick={() => void submit()} disabled={loading}>
-              {loading ? <LoaderCircle className="spin" size={19} /> : <Beaker size={19} />}
-              {loading ? t("running") : t("runBacktest")}
-              {!loading && <ArrowRight size={18} />}
-            </button>
-          </div>
+          </aside>
         </section>
-
-        <div ref={resultRef} className="result-anchor">
-          {response ? (
-            <Suspense fallback={<section className="empty-results"><LoaderCircle className="spin" size={30} /></section>}>
-              <ResultsDashboard key={response.request_id} response={response} t={t} locale={locale} />
-            </Suspense>
-          ) : (
-            <section className="empty-results">
-              <span><LineIcon /></span>
-              <h2>{t("results")}</h2>
-              <p>{t("noResults")}</p>
-            </section>
-          )}
-        </div>
-
-        <details className="methodology">
-          <summary>{t("methodology")}</summary>
-          <p>{t("methodologyText")}</p>
-        </details>
       </main>
 
-      <footer><p>{t("legal")}</p><a href="https://github.com/chihung1024/backtest" target="_blank" rel="noreferrer">GitHub</a></footer>
-
-      <ConnectionDialog
-        open={connectionOpen}
-        connection={connection}
-        t={t}
-        onClose={() => setConnectionOpen(false)}
-        onSave={updateConnection}
-      />
-      {toast && <div className="toast" role="status"><Check size={16} />{toast}</div>}
+      <footer className="retirement-footer">
+        <p>此頁面只提供遷移資訊，不執行投資組合計算。</p>
+      </footer>
     </div>
-  );
-}
-
-function LineIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M3 17l5-6 4 3 8-10" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3 21h18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
   );
 }
