@@ -284,6 +284,20 @@ a {
   }
 }
 
+@media (prefers-contrast: more) {
+  :root {
+    --muted: #344f5c;
+    --line: #7e969f;
+  }
+
+  .retirement-card,
+  .retirement-grid article,
+  .retirement-note,
+  .retirement-actions a {
+    border-width: 2px;
+  }
+}
+
 @media (forced-colors: active) {
   .retirement-card,
   .retirement-grid article,
