@@ -1,4 +1,4 @@
-name: Vercel production acceptance
+name: Vercel retirement acceptance
 
 on:
   push:
@@ -12,20 +12,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: vercel-production-acceptance
+  group: vercel-retirement-acceptance
   cancel-in-progress: true
 
 jobs:
   verify:
-    name: Vercel Production · real API acceptance
+    name: Vercel Production · retired API acceptance
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       BASE_URL: https://portfolio-backtest-api.vercel.app
-      ALLOWED_ORIGIN: https://chihung1024.github.io
+      REPLACEMENT_URL: https://backteststock.chired.workers.dev/portfolio/
     steps:
       - uses: actions/checkout@v7
-      - name: Wait for exact Vercel revision and verify real API
+      - name: Wait for exact retired Vercel revision
         shell: bash
         run: |
           python - <<'PY'
@@ -38,13 +38,11 @@ jobs:
           import urllib.request
 
           base = os.environ["BASE_URL"].rstrip("/")
-          origin = os.environ["ALLOWED_ORIGIN"]
+          replacement = os.environ["REPLACEMENT_URL"]
           expected_commit = os.environ["GITHUB_SHA"]
 
-          def request(path: str, *, method: str = "GET", payload=None, allowed_origin=False):
-              headers = {"User-Agent": "backtest-vercel-production-acceptance/1.0"}
-              if allowed_origin:
-                  headers["Origin"] = origin
+          def request(path: str, *, method: str = "GET", payload=None):
+              headers = {"User-Agent": "backtest-vercel-retirement-acceptance/1.0"}
               data = None
               if payload is not None:
                   headers["Content-Type"] = "application/json"
@@ -58,79 +56,48 @@ jobs:
               except urllib.error.HTTPError as exc:
                   return exc.code, exc.headers, exc.read().decode("utf-8")
 
-          last_error = "production deployment did not become ready"
-          for attempt in range(60):
+          last_error = "retired production deployment did not become ready"
+          for _attempt in range(60):
               try:
-                  status, _, body = request("/health")
-                  if status == 200:
-                      health = json.loads(body)
-                      if (
-                          health.get("status") == "ok"
-                          and health.get("deployment_sha") == expected_commit
-                      ):
-                          break
-                      last_error = (
-                          "waiting for deployment "
-                          f"{expected_commit}; current={health.get('deployment_sha')!r}"
-                      )
-                  else:
-                      last_error = f"health returned {status}: {body[:300]}"
+                  status, headers, body = request("/health")
+                  payload = json.loads(body)
+                  if (
+                      status == 410
+                      and payload.get("status") == "retired"
+                      and payload.get("code") == "legacy_project_retired"
+                      and payload.get("replacement_url") == replacement
+                      and payload.get("deployment_sha") == expected_commit
+                      and headers.get("Location") == replacement
+                  ):
+                      break
+                  last_error = (
+                      f"waiting for retired deployment {expected_commit}; "
+                      f"status={status}; current={payload.get('deployment_sha')!r}; "
+                      f"code={payload.get('code')!r}"
+                  )
               except Exception as exc:  # noqa: BLE001
                   last_error = repr(exc)
               time.sleep(10)
           else:
               raise SystemExit(last_error)
 
-          status, headers, body = request("/api/v1/auth/check")
-          assert status == 403, (status, body)
-          assert json.loads(body)["detail"] == "Browser origin is not allowed"
-          assert headers.get("Cache-Control") == "no-store"
+          checks = [
+              ("GET", "/", None),
+              ("GET", "/health", None),
+              ("GET", "/api/v1/auth/check", None),
+              ("GET", "/api/v1/assets/search?q=VT&limit=5", None),
+              ("POST", "/api/v1/backtests", {}),
+          ]
+          for method, path, payload in checks:
+              status, headers, body = request(path, method=method, payload=payload)
+              result = json.loads(body)
+              assert status == 410, (path, status, body)
+              assert result.get("status") == "retired", (path, result)
+              assert result.get("code") == "legacy_project_retired", (path, result)
+              assert result.get("replacement_url") == replacement, (path, result)
+              assert result.get("deployment_sha") == expected_commit, (path, result)
+              assert headers.get("Location") == replacement, (path, headers)
+              assert headers.get("Cache-Control") == "no-store", (path, headers)
 
-          status, headers, body = request(
-              "/api/v1/auth/check", allowed_origin=True
-          )
-          assert status == 200, (status, body)
-          assert json.loads(body)["status"] == "ok"
-          assert headers.get("Access-Control-Allow-Origin") == origin
-
-          status, _, body = request(
-              "/api/v1/assets/search?q=VT&limit=5", allowed_origin=True
-          )
-          assert status == 200, (status, body)
-          search = json.loads(body)
-          assert isinstance(search, list) and search, search
-          assert any(item.get("symbol") == "VT" for item in search), search
-
-          payload = {
-              "portfolios": [
-                  {
-                      "name": "Global",
-                      "assets": [{"symbol": "VT", "weight": 100}],
-                  }
-              ],
-              "benchmark": "VT",
-              "start_date": "2024-01-01",
-              "end_date": "2024-06-30",
-              "base_currency": "TWD",
-          }
-          last = None
-          for attempt in range(3):
-              status, _, body = request(
-                  "/api/v1/backtests",
-                  method="POST",
-                  payload=payload,
-                  allowed_origin=True,
-              )
-              last = (status, body)
-              if status == 200:
-                  result = json.loads(body)
-                  assert result["base_currency"] == "TWD"
-                  assert result["results"][0]["name"] == "Global"
-                  assert result["results"][0]["series"], result
-                  break
-              time.sleep(20)
-          else:
-              raise AssertionError(last)
-
-          print("Vercel production acceptance passed", expected_commit)
+          print("Vercel retirement acceptance passed", expected_commit)
           PY
