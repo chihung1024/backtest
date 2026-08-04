@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import styles from "./styles.css?raw";
-import { chartColors } from "./utils";
 
 function rule(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -29,30 +28,24 @@ function contrast(foreground: string, background: string): number {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
-describe("UI quality CSS contracts", () => {
-  it("centers the iOS date value on both axes without pixel offsets", () => {
-    const valueRule = rule(".date-input--centered::-webkit-date-and-time-value");
-    const editRule = rule(".date-input--centered::-webkit-datetime-edit");
-
-    for (const dateRule of [valueRule, editRule]) {
-      expect(dateRule).toMatch(/height:\s*100%/);
-      expect(dateRule).toMatch(/align-items:\s*center/);
-      expect(dateRule).toMatch(/justify-content:\s*center/);
-      expect(dateRule).toMatch(/text-align:\s*center/);
-      expect(dateRule).not.toMatch(/transform|translate|top:/);
-    }
+describe("Retirement page UI quality CSS contracts", () => {
+  it("keeps destination links large enough for touch and keyboard users", () => {
+    const actions = rule(".retirement-actions a");
+    expect(actions).toMatch(/min-height:\s*48px/);
+    expect(actions).toMatch(/display:\s*inline-flex/);
+    expect(actions).toMatch(/align-items:\s*center/);
+    expect(actions).toMatch(/justify-content:\s*center/);
+    expect(rule(":focus-visible")).toMatch(/outline:\s*3px solid/);
   });
 
-  it("keeps mobile controls, safe areas, and sticky layers readable", () => {
-    expect(rule(".button")).toMatch(/min-height:\s*44px/);
-    expect(styles).toMatch(/input,\s*select,\s*\.toggle\s*\{[^}]*min-height:\s*48px/s);
-    expect(styles).toMatch(/\.mobile-status,\s*\.mobile-menu-trigger\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s);
-    expect(styles).toMatch(/\.modal \.icon-button\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s);
-    expect(styles).toMatch(/\.tooltip\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s);
+  it("keeps safe areas and the 320px to 390px mobile layout readable", () => {
+    expect(styles).toContain("env(safe-area-inset-left)");
+    expect(styles).toContain("env(safe-area-inset-right)");
     expect(styles).toContain("env(safe-area-inset-bottom)");
-    expect(styles).toContain("scroll-margin-bottom");
-    expect(styles).toMatch(/\.app-header\s*\{[^}]*background:[^}]*98%/s);
-    expect(styles).toMatch(/\.run-bar\s*\{[^}]*background:[^}]*98%/s);
+    expect(styles).toContain("@media (max-width: 760px)");
+    expect(styles).toMatch(/@media \(max-width: 760px\)[\s\S]*\.retirement-grid\s*\{[^}]*grid-template-columns:\s*1fr/);
+    expect(styles).toMatch(/@media \(max-width: 760px\)[\s\S]*\.retirement-actions a\s*\{[^}]*width:\s*100%/);
+    expect(rule("html")).toMatch(/min-width:\s*320px/);
   });
 
   it("preserves reduced-motion, increased-contrast, and forced-color fallbacks", () => {
@@ -61,34 +54,19 @@ describe("UI quality CSS contracts", () => {
     expect(styles).toContain("@media (forced-colors: active)");
   });
 
-  it("keeps semantic text colors above the WCAG AA normal-text contrast threshold", () => {
-    const blocks = Array.from(styles.matchAll(/:root(?:\[data-theme="dark"\])?\s*\{([^}]*)\}/g));
-    expect(blocks).toHaveLength(2);
-    const light = themeTokens(blocks[0][1]);
-    const dark = themeTokens(blocks[1][1]);
-
+  it("keeps retirement text colors above WCAG AA normal-text contrast", () => {
+    const root = styles.match(/:root\s*\{([^}]*)\}/s);
+    expect(root).not.toBeNull();
+    const tokens = themeTokens(root?.[1] ?? "");
     const pairs = [
-      [light.primary, light.surface],
-      [light.muted, light.surface],
-      [light.subtle, light["surface-2"]],
-      [light.danger, light["danger-soft"]],
-      [light.warning, light["warning-soft"]],
-      [light.success, light["primary-soft"]],
-      [dark.primary, dark.surface],
-      [dark.muted, dark.surface],
-      [dark.subtle, dark.surface],
-      [dark.danger, dark["danger-soft"]],
-      [dark.warning, dark["warning-soft"]],
-      [dark.success, dark.surface],
+      [tokens.ink, tokens.surface],
+      [tokens.muted, tokens.surface],
+      [tokens["accent-dark"], tokens.surface],
+      [tokens.warning, tokens["warning-soft"]],
     ];
 
     for (const [foreground, background] of pairs) {
       expect(contrast(foreground, background), `${foreground} on ${background}`).toBeGreaterThanOrEqual(4.5);
-    }
-
-    for (const color of chartColors) {
-      expect(contrast(color, light.surface), `${color} chart series on light surface`).toBeGreaterThanOrEqual(3);
-      expect(contrast(color, dark["surface-2"]), `${color} chart series on dark surface`).toBeGreaterThanOrEqual(3);
     }
   });
 });
