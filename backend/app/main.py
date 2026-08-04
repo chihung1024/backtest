@@ -36,6 +36,8 @@ app.add_middleware(
     max_age=86400,
 )
 
+RETIREMENT_URL = "https://backteststock.chired.workers.dev/portfolio/"
+
 
 class MinuteRateLimiter:
     def __init__(self, limit: int) -> None:
@@ -67,8 +69,35 @@ api_rate_limiter = MinuteRateLimiter(limit=20)
 backtest_rate_limiter = MinuteRateLimiter(limit=4)
 
 
+def legacy_retirement_enabled() -> bool:
+    forced = os.getenv("FORCE_LEGACY_RETIREMENT", "").strip().lower()
+    return forced in {"1", "true", "yes", "on"} or os.getenv("VERCEL_ENV") == "production"
+
+
+def retired_response() -> JSONResponse:
+    response = JSONResponse(
+        status_code=status.HTTP_410_GONE,
+        content={
+            "status": "retired",
+            "code": "legacy_project_retired",
+            "detail": "Portfolio Backtest Lab has moved to BacktestStock Portfolio Research.",
+            "replacement_url": RETIREMENT_URL,
+            "deployment_sha": os.getenv("VERCEL_GIT_COMMIT_SHA", ""),
+        },
+    )
+    response.headers["Location"] = RETIREMENT_URL
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
+
+
 @app.middleware("http")
 async def security_and_rate_limit(request: Request, call_next: Any) -> Any:
+    if legacy_retirement_enabled():
+        return retired_response()
+
     if request.url.path.startswith("/api/v1/"):
         forwarded = request.headers.get("x-forwarded-for", "")
         fallback = request.client.host if request.client else "unknown"

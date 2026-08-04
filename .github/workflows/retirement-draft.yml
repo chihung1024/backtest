@@ -1,0 +1,33 @@
+name: Retirement Draft Safety
+
+on:
+  pull_request:
+    paths:
+      - "frontend/**"
+      - "backend/**"
+      - "docs/RETIREMENT.md"
+      - "README.md"
+      - "scripts/validate_retirement_draft.py"
+      - ".github/workflows/pages.yml"
+      - ".github/workflows/vercel-production-smoke.yml"
+      - ".github/workflows/retirement-draft.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: retirement-draft-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Verify draft-only retirement contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Confirm no irreversible action is automated
+        run: python scripts/validate_retirement_draft.py
